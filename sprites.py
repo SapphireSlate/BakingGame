@@ -3,19 +3,19 @@ import math
 from config import WIDTH, HEIGHT, GRAY, DARK_GRAY, WHITE, BLACK
 
 INGREDIENT_COLORS = {
-    "Flour": (255, 245, 240),      # Pure white with slight warmth
-    "Sugar": (147, 255, 108),      # Bright lime green
-    "Eggs": (255, 220, 50),        # Bright yellow
-    "Milk": (200, 235, 255),       # Sky blue
-    "Butter": (255, 170, 50),      # Orange
-    "Cocoa": (90, 50, 30),         # Dark chocolate brown
-    "Vanilla": (255, 130, 210),    # Pink
-    "Baking Powder": (130, 0, 255), # Deep purple
-    "Powdered Sugar": (255, 255, 245), # Bright white
-    "Chocolate Chips": (65, 35, 20),   # Rich dark brown
-    "Condensed Milk": (255, 180, 100), # Light orange
-    "Meringue": (240, 100, 255),      # Bright purple
-    "Frosting": (50, 200, 255)        # Azure blue
+    "Flour": (245, 240, 235),      # Soft cream white
+    "Sugar": (250, 245, 220),      # Warm sandy white
+    "Eggs": (255, 200, 50),        # Vibrant egg yolk yellow
+    "Milk": (240, 250, 255),       # Cool white with blue undertone
+    "Butter": (255, 190, 80),      # Rich golden yellow
+    "Cocoa": (45, 25, 15),         # Deep dark chocolate
+    "Vanilla": (200, 150, 100),    # Rich caramel brown
+    "Baking Powder": (255, 250, 250), # Bright white
+    "Powdered Sugar": (255, 255, 250), # Pure white
+    "Chocolate Chips": (30, 20, 10),   # Extra dark chocolate
+    "Condensed Milk": (255, 225, 180), # Golden cream
+    "Meringue": (255, 250, 245),      # Pure white with pink undertone
+    "Frosting": (220, 255, 250)       # Cool mint white
 }
 
 def ensure_rgb(color):

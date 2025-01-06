@@ -5,6 +5,7 @@ import time
 from config import WIDTH, HEIGHT, WHITE, RED, GRAY, DARK_GRAY, YELLOW, BLUE, BLACK
 from colorsys import rgb_to_hsv, hsv_to_rgb
 from sprites import INGREDIENT_COLORS
+import mixbox
 
 def ensure_rgb(color):
     """Ensure color is in RGB format (3 components)"""
@@ -17,14 +18,21 @@ def ensure_rgb(color):
         return (128, 128, 128)
 
 def safe_color_mix(color1, color2):
-    """Safely mix two colors with error handling"""
+    """Safely mix two colors with error handling using Mixbox"""
     try:
         # Ensure both colors are in RGB format
         c1 = ensure_rgb(color1)
         c2 = ensure_rgb(color2)
         
-        # Mix colors using subtractive mixing
-        mixed = mix_colors(c1, c2)
+        # Convert colors from 0-255 range to 0-1 range for Mixbox
+        c1_norm = tuple(c/255 for c in c1)
+        c2_norm = tuple(c/255 for c in c2)
+        
+        # Mix colors using Mixbox's pigment-based mixing
+        mixed_norm = mixbox.mix(c1_norm, c2_norm)
+        
+        # Convert back to 0-255 range
+        mixed = tuple(int(c * 255) for c in mixed_norm)
         
         # Ensure result is valid RGB
         return ensure_rgb(mixed)
@@ -33,26 +41,26 @@ def safe_color_mix(color1, color2):
         return (128, 128, 128)  # Return gray as fallback
 
 def mix_colors(color1, color2):
-    """Mix colors like real paint using subtractive color mixing"""
+    """Mix colors using Mixbox's realistic pigment mixing"""
     # Ensure we're only using RGB components, not alpha
     rgb1 = color1[:3] if len(color1) > 3 else color1
     rgb2 = color2[:3] if len(color2) > 3 else color2
     
-    # Convert to CMY (Cyan, Magenta, Yellow) space
-    cmy1 = [1 - (c / 255) for c in rgb1]
-    cmy2 = [1 - (c / 255) for c in rgb2]
+    # Convert to 0-1 range for Mixbox
+    c1_norm = tuple(c/255 for c in rgb1)
+    c2_norm = tuple(c/255 for c in rgb2)
     
-    # Mix the colors in CMY space (subtractive mixing)
-    mixed_cmy = [(c1 + c2) / 2 for c1, c2 in zip(cmy1, cmy2)]
+    # Mix using Mixbox
+    mixed_norm = mixbox.mix(c1_norm, c2_norm)
     
-    # Convert back to RGB
-    mixed_rgb = [max(0, min(255, int((1 - c) * 255))) for c in mixed_cmy]
+    # Convert back to 0-255 range
+    mixed_rgb = tuple(int(c * 255) for c in mixed_norm)
     
     # Ensure some minimal brightness
     min_value = 30
-    mixed_rgb = [max(min_value, c) for c in mixed_rgb]
+    mixed_rgb = tuple(max(min_value, c) for c in mixed_rgb)
     
-    return tuple(mixed_rgb)
+    return mixed_rgb
 
 class AnimatedIngredient:
     def __init__(self, name, start_x, start_y):
@@ -61,7 +69,7 @@ class AnimatedIngredient:
         self.y = start_y
         self.target_x = WIDTH // 2
         self.target_y = HEIGHT // 2
-        self.speed = 5
+        self.speed = 400
         self.color = INGREDIENT_COLORS.get(name, (200, 200, 200))  # Use colors from sprites.py
 
     def move(self):
