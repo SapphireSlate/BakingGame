@@ -1,21 +1,345 @@
 import pygame
-import math
 import random
-import time
-from config import WIDTH, HEIGHT, WHITE, RED, GRAY, DARK_GRAY, YELLOW, BLUE, BLACK
-from colorsys import rgb_to_hsv, hsv_to_rgb
-from sprites import INGREDIENT_COLORS
+import math
 import mixbox
 
-def ensure_rgb(color):
-    """Ensure color is in RGB format (3 components)"""
-    try:
-        if len(color) > 3:
-            return color[:3]
-        return tuple(max(0, min(255, int(c))) for c in color)
-    except (TypeError, ValueError):
-        print(f"Warning: Invalid color value {color}, defaulting to gray")
-        return (128, 128, 128)
+# Constants
+WIDTH = 800
+HEIGHT = 600
+
+# Colors
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+GRAY = (200, 200, 200)
+DARK_GRAY = (100, 100, 100)
+
+# Ingredient colors
+INGREDIENT_COLORS = {
+    'Flour': (255, 250, 245),        # Warm white
+    'Sugar': (255, 252, 240),        # Cream white
+    'Eggs': (255, 215, 100),         # Rich egg yolk yellow
+    'Milk': (250, 250, 255),         # Cool white with slight blue tint
+    'Butter': (255, 225, 150),       # Rich butter yellow
+    'Cocoa': (60, 30, 15),           # Deep chocolate brown
+    'Vanilla': (255, 235, 200),      # Warm vanilla cream
+    'Baking Powder': (245, 245, 245), # Pure white
+    'Powdered Sugar': (255, 255, 252), # Bright white
+    'Chocolate Chips': (45, 25, 10),  # Dark chocolate
+    'Condensed Milk': (255, 245, 220), # Rich cream
+    'Meringue': (255, 252, 250),     # Pure white with slight warmth
+    'Frosting': (255, 255, 255)      # Pure white base for mixing
+}
+
+# Ingredient types for animation behavior
+INGREDIENT_TYPES = {
+    'Flour': 'dry',
+    'Sugar': 'dry',
+    'Cocoa': 'dry',
+    'Baking Powder': 'dry',
+    'Powdered Sugar': 'dry',
+    'Chocolate Chips': 'solid',
+    'Milk': 'liquid',
+    'Eggs': 'liquid',
+    'Butter': 'solid',
+    'Vanilla': 'liquid',
+    'Condensed Milk': 'liquid',
+    'Meringue': 'solid',
+    'Frosting': 'solid'
+}
+
+class PopupText:
+    def __init__(self, text, x, y, color=(255, 0, 0), size=24, duration=2.0, rise_speed=1.0):
+        self.font = pygame.font.Font(None, size)
+        self.text = text
+        self.x = x
+        self.y = y
+        self.color = color
+        self.alpha = 255
+        self.fade_speed = 255 / (duration * 60)  # 60 FPS
+        self.rise_speed = rise_speed
+        self.original_y = y
+
+    def update(self):
+        """Update the popup text position and alpha"""
+        self.alpha = max(0, self.alpha - self.fade_speed)
+        self.y = self.y - self.rise_speed
+        return self.alpha > 0
+
+    def draw(self, screen):
+        """Draw the popup text with current alpha value"""
+        if self.alpha <= 0:
+            return
+            
+        text_surface = self.font.render(self.text, True, self.color)
+        alpha_surface = pygame.Surface(text_surface.get_size(), pygame.SRCALPHA)
+        alpha_surface.fill((255, 255, 255, int(self.alpha)))
+        text_surface.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        
+        text_rect = text_surface.get_rect(center=(self.x, self.y))
+        screen.blit(text_surface, text_rect)
+
+class AnimationManager:
+    def __init__(self):
+        self.shake_duration = 0
+        self.shake_intensity = 0
+        self.baking_effect = BakingEffect()
+        self.popup_messages = []
+        self.animated_ingredients = []
+        self.mixing_layers = []
+        self.ghibli_effects = GhibliMixingEffect()
+        self.is_baking = False
+        self.bowl_width = 160
+        self.bowl_height = 120
+        self._is_animating = False
+        self.total_ingredient_volume = 0
+        self.max_ingredient_volume = 1000  # Maximum volume the bowl can hold
+        self.current_bowl_level = 0  # Current fill level (0 to 1)
+        self.max_concurrent_animations = 5  # Maximum number of concurrent animations
+
+    def reset_bowl(self):
+        """Reset the bowl state"""
+        self.mixing_layers.clear()
+        self.animated_ingredients.clear()
+        self.total_ingredient_volume = 0
+        self.current_bowl_level = 0
+        self.is_baking = False
+        self._is_animating = False
+
+    def add_ingredient_volume(self, ingredient_type):
+        """Calculate and add ingredient volume"""
+        # Different ingredients have different volumes
+        volume_map = {
+            'dry': 100,    # Flour, sugar, etc.
+            'liquid': 150, # Milk, eggs, etc.
+            'solid': 80    # Chocolate chips, butter chunks
+        }
+        
+        ingredient_volume = volume_map.get(INGREDIENT_TYPES.get(ingredient_type, 'dry'), 100)
+        if self.total_ingredient_volume + ingredient_volume <= self.max_ingredient_volume:
+            self.total_ingredient_volume += ingredient_volume
+            self.current_bowl_level = min(1.0, self.total_ingredient_volume / self.max_ingredient_volume)
+            return True
+        return False
+
+    @property
+    def is_animating(self):
+        """Check if any animations are currently playing"""
+        # Only consider as blocking if we have too many active animations
+        return len(self.animated_ingredients) >= self.max_concurrent_animations
+
+    def update_animations(self, screen, game, dt):
+        """Update all animations"""
+        if self.shake_duration > 0:
+            self.shake_duration -= 1
+
+        # Update ingredient animations
+        ingredients_to_remove = []
+        for ingredient in self.animated_ingredients:
+            if ingredient.update(self.current_bowl_level):
+                ingredients_to_remove.append(ingredient)
+                # When ingredient settles, update the mixing layers
+                self.update_mixing_layers(ingredient)
+
+        # Remove settled ingredients
+        for ingredient in ingredients_to_remove:
+            self.animated_ingredients.remove(ingredient)
+
+        # Update mixing animations if we have ingredients
+        if self.mixing_layers:
+            self.update_mixing_animation(dt)
+
+        # Update baking animations
+        if self.is_baking:
+            self.baking_effect.update()
+            if self.baking_effect.is_complete():
+                self.is_baking = False
+                game.on_baking_complete()
+
+        # Update effects
+        self.ghibli_effects.update(dt)
+
+        # Update popup messages
+        self.popup_messages = [msg for msg in self.popup_messages if msg.update()]
+
+        # Draw everything
+        self.draw(screen)
+
+    def update_mixing_layers(self, settled_ingredient):
+        """Update mixing layers when an ingredient settles"""
+        for layer in self.mixing_layers:
+            if layer.ingredient == settled_ingredient.ingredient:
+                layer.y_offset = self.get_layer_height()
+                break
+
+    def get_layer_height(self):
+        """Calculate the height for new layers based on current bowl level"""
+        return (self.bowl_height / 2) * (1 - self.current_bowl_level)
+
+    def add_ingredient_animation(self, ingredient, start_x, start_y):
+        """Add a new ingredient animation"""
+        if len(self.animated_ingredients) >= self.max_concurrent_animations:
+            self.add_popup_message("Wait for ingredients to settle!", color=(255, 165, 0))
+            return False
+            
+        if not self.add_ingredient_volume(ingredient):
+            self.add_popup_message("Bowl is full!", color=(255, 0, 0))
+            return False
+
+        # Calculate target Y based on current bowl level and existing animations
+        base_target_y = HEIGHT//2 + (self.bowl_height//2 * (1 - self.current_bowl_level))
+        
+        # Add some vertical spacing between ingredients
+        spacing = 10
+        target_y = base_target_y - (len(self.animated_ingredients) * spacing)
+
+        new_ingredient = AnimatedIngredient(
+            ingredient, 
+            start_x, 
+            start_y, 
+            target_y=target_y
+        )
+        self.animated_ingredients.append(new_ingredient)
+        
+        # Create a new mixing layer
+        new_layer = MixingLayer(ingredient, self.current_bowl_level)
+        self.mixing_layers.append(new_layer)
+        
+        return True
+
+    def draw_mixing_bowl(self, screen):
+        """Draw the mixing bowl with current fill level"""
+        # Draw bowl outline
+        bowl_color = DARK_GRAY
+        bowl_thickness = 3
+        
+        # Calculate bowl dimensions based on fill level
+        bowl_rect = pygame.Rect(
+            WIDTH//2 - self.bowl_width//2,
+            HEIGHT//2 - self.bowl_height//2,
+            self.bowl_width,
+            self.bowl_height
+        )
+        
+        # Draw filled bowl background
+        pygame.draw.ellipse(screen, GRAY, bowl_rect)
+        
+        # Draw fill level indicator
+        if self.current_bowl_level > 0:
+            fill_height = int(self.bowl_height * self.current_bowl_level)
+            fill_rect = pygame.Rect(
+                WIDTH//2 - self.bowl_width//2,
+                HEIGHT//2 + self.bowl_height//2 - fill_height,
+                self.bowl_width,
+                fill_height
+            )
+            fill_color = self.get_mixed_color()
+            pygame.draw.ellipse(screen, fill_color, fill_rect)
+        
+        # Draw bowl outline
+        pygame.draw.ellipse(screen, bowl_color, bowl_rect, bowl_thickness)
+        
+        # Draw bowl rim
+        rim_height = 20
+        rim_rect = pygame.Rect(
+            WIDTH//2 - self.bowl_width//2,
+            HEIGHT//2 - self.bowl_height//2 - rim_height//2,
+            self.bowl_width,
+            rim_height
+        )
+        pygame.draw.ellipse(screen, bowl_color, rim_rect, bowl_thickness)
+
+    def get_mixed_color(self):
+        """Get the current mixed color of all ingredients"""
+        if not self.mixing_layers:
+            return GRAY
+        
+        mixed_color = self.mixing_layers[0].color
+        for layer in self.mixing_layers[1:]:
+            mixed_color = mix_colors(mixed_color, layer.color)
+        return mixed_color
+
+    def update_mixing_animation(self, dt):
+        """Update the mixing animation"""
+        # Update each layer
+        for layer in self.mixing_layers:
+            layer.update(dt)
+            
+            # Add Ghibli effects during mixing
+            if random.random() < 0.1:
+                self.ghibli_effects.add_sparkle(
+                    WIDTH/2 + random.uniform(-50, 50),
+                    HEIGHT/2 + random.uniform(-20, 20)
+                )
+                if random.random() < 0.3:
+                    self.ghibli_effects.add_swirl(
+                        WIDTH/2 + random.uniform(-30, 30),
+                        HEIGHT/2 + random.uniform(-15, 15),
+                        layer.color
+                    )
+
+    def add_error_message(self, message, color=(255, 0, 0)):
+        """Add an error message as a popup"""
+        self.popup_messages.append(
+            PopupText(
+                message,
+                WIDTH // 2,
+                HEIGHT // 2,
+                color=color,
+                size=24,
+                duration=3.0,
+                rise_speed=1.0
+            )
+        )
+
+    def add_popup_message(self, message, color=(0, 0, 0), size=36, duration=2.0):
+        """Add a popup message"""
+        self.popup_messages.append(
+            PopupText(
+                message,
+                WIDTH // 2,
+                HEIGHT // 2,
+                color=color,
+                size=size,
+                duration=duration,
+                rise_speed=2.0
+            )
+        )
+
+    def start_baking(self):
+        """Start the baking process"""
+        if not self.is_baking:
+            self.is_baking = True
+            self.baking_effect = BakingEffect()
+
+    def stop_baking(self):
+        """Stop the baking process"""
+        if self.is_baking:
+            self.is_baking = False
+
+    def draw(self, screen):
+        """Draw all animations"""
+        # Draw mixing bowl
+        self.draw_mixing_bowl(screen)
+        
+        # Draw mixing layers
+        for layer in self.mixing_layers:
+            layer.draw(screen, WIDTH//2, HEIGHT//2, self.bowl_width, self.bowl_height)
+        
+        # Draw ingredient animations
+        for ingredient in self.animated_ingredients:
+            ingredient.draw(screen)
+        
+        # Draw Ghibli effects
+        self.ghibli_effects.draw(screen)
+        
+        # Draw baking effects
+        if self.is_baking:
+            self.baking_effect.draw(screen, WIDTH//2, HEIGHT//2)
+        
+        # Draw popup messages
+        for msg in self.popup_messages:
+            msg.draw(screen)
 
 def safe_color_mix(color1, color2):
     """Safely mix two colors with error handling using Mixbox"""
@@ -29,7 +353,7 @@ def safe_color_mix(color1, color2):
         c2_norm = tuple(c/255 for c in c2)
         
         # Mix colors using Mixbox's pigment-based mixing
-        mixed_norm = mixbox.mix(c1_norm, c2_norm)
+        mixed_norm = mixbox.lerp(c1_norm, c2_norm, 0.5)
         
         # Convert back to 0-255 range
         mixed = tuple(int(c * 255) for c in mixed_norm)
@@ -37,792 +361,492 @@ def safe_color_mix(color1, color2):
         # Ensure result is valid RGB
         return ensure_rgb(mixed)
     except Exception as e:
-        print(f"Error mixing colors {color1} and {color2}: {e}")
-        return (128, 128, 128)  # Return gray as fallback
+        print(f"Warning: Color mixing fallback for {color1} and {color2}: {e}")
+        # Fallback to simple averaging if Mixbox fails
+        return tuple(max(30, (c1 + c2) // 2) for c1, c2 in zip(ensure_rgb(color1), ensure_rgb(color2)))
 
-def mix_colors(color1, color2):
+def mix_colors(color1, color2, ratio=0.5):
     """Mix colors using Mixbox's realistic pigment mixing"""
     # Ensure we're only using RGB components, not alpha
     rgb1 = color1[:3] if len(color1) > 3 else color1
     rgb2 = color2[:3] if len(color2) > 3 else color2
     
-    # Convert to 0-1 range for Mixbox
-    c1_norm = tuple(c/255 for c in rgb1)
-    c2_norm = tuple(c/255 for c in rgb2)
-    
-    # Mix using Mixbox
-    mixed_norm = mixbox.mix(c1_norm, c2_norm)
-    
-    # Convert back to 0-255 range
-    mixed_rgb = tuple(int(c * 255) for c in mixed_norm)
-    
-    # Ensure some minimal brightness
-    min_value = 30
-    mixed_rgb = tuple(max(min_value, c) for c in mixed_rgb)
-    
-    return mixed_rgb
-
-class AnimatedIngredient:
-    def __init__(self, name, start_x, start_y):
-        self.name = name
-        self.x = start_x
-        self.y = start_y
-        self.target_x = WIDTH // 2
-        self.target_y = HEIGHT // 2
-        self.speed = 400
-        self.color = INGREDIENT_COLORS.get(name, (200, 200, 200))  # Use colors from sprites.py
-
-    def move(self):
-        dx = self.target_x - self.x
-        dy = self.target_y - self.y
-        distance = math.sqrt(dx**2 + dy**2)
-        if distance > self.speed:
-            self.x += (dx / distance) * self.speed
-            self.y += (dy / distance) * self.speed
-            return False
-        return True
-
-    def draw(self, screen):
-        # Create a surface with transparency
-        circle_surface = pygame.Surface((40, 40), pygame.SRCALPHA)
+    try:
+        # Convert to 0-1 range for Mixbox
+        c1_norm = tuple(c/255 for c in rgb1)
+        c2_norm = tuple(c/255 for c in rgb2)
         
-        # Draw the colored circle with the ingredient's color and enhanced visibility
-        pygame.draw.circle(circle_surface, (*self.color, 230), (20, 20), 20)
-        pygame.draw.circle(circle_surface, WHITE, (20, 20), 20, 2)  # White border
+        # Mix using Mixbox lerp
+        mixed_norm = mixbox.lerp(c1_norm, c2_norm, ratio)
         
-        # Add a subtle glow effect
-        glow_radius = 22
-        glow_color = (*self.color, 100)  # Semi-transparent glow
-        pygame.draw.circle(circle_surface, glow_color, (20, 20), glow_radius)
+        # Convert back to 0-255 range
+        mixed_rgb = tuple(int(c * 255) for c in mixed_norm)
         
-        screen.blit(circle_surface, (int(self.x) - 20, int(self.y) - 20))
+        # Ensure some minimal brightness
+        min_value = 30
+        mixed_rgb = tuple(max(min_value, c) for c in mixed_rgb)
         
-        # Render text with transparent background
-        font = pygame.font.Font(None, 20)
-        text_surface = font.render(self.name[:1], True, BLACK, None)
-        screen.blit(text_surface, (int(self.x) - text_surface.get_width() // 2, 
-                                 int(self.y) - text_surface.get_height() // 2))
+        return mixed_rgb
+    except Exception as e:
+        print(f"Warning: Color mixing fallback: {e}")
+        # Fallback to simple linear interpolation
+        return tuple(
+            max(30, int(c1 * (1 - ratio) + c2 * ratio))
+            for c1, c2 in zip(rgb1, rgb2)
+        )
 
-class AnimationManager:
-    def __init__(self):
-        self.animated_ingredients = []
-        self.spill_line = []
-        self.power_flicker = False
-        self.oven_fire = []
-        self.bowl_fill_level = 0
-        self.is_animating = False
-        self.bowl_color = (200, 200, 200)
-        self.color_transition = None
-        self.transition_progress = 0
-        self.transition_speed = 0.05
-        self.pending_color_transitions = []
-        self.disaster_message = None
-        self.disaster_timer = 0
-        self.disaster_duration = 180  # 3 seconds at 60 FPS
-        self.current_disaster = None
-        self.min_color_value = 100
-        self.disaster_particles = []
-        self.flicker_count = 0
-        self.flame_particles = []
+def ensure_rgb(color):
+    """Ensure color is in RGB format (3 components)"""
+    if len(color) > 3:
+        return color[:3]
+    return color
+
+class BakingEffect:
+    def __init__(self, initial_color=(200, 200, 200), target_color=(139, 69, 19), bowl_width=150, bowl_height=100):
+        self.initial_color = initial_color
+        self.target_color = target_color
+        self.bowl_width = bowl_width
+        self.bowl_height = bowl_height
+        self.baking_progress = 0
+        self.smoke_particles = []
+        self.splash_particles = []
+        self.heat_distortion = 0
+        self.rising_amount = 0
+        self.bubbles = []
         self.steam_particles = []
-        self.flour_clouds = []
-        self.sugar_crystals = []
-        self.liquid_droplets = []
-        self.ingredient_effects = {
-            "Flour": self.add_flour_effect,
-            "Sugar": self.add_sugar_effect,
-            "Eggs": self.add_egg_effect,
-            "Milk": self.add_liquid_effect,
-            "Butter": self.add_butter_effect,
-            "Vanilla": self.add_liquid_effect,
-            "Cocoa": self.add_flour_effect,
-        }
-        self.previous_colors = []  # Store previous colors for mixing
-        self.max_ingredients = 8  # Maximum number of ingredients that can be mixed
-        self.error_messages = []  # Store error messages to display
-        self.error_message_duration = 3  # seconds
-        self.error_message_timer = 0
+        self.baking_duration = 5.0  # Baking takes 5 seconds
+        self.baking_timer = 0
+        self.baking_complete = False
 
-    def add_ingredient_animation(self, ing, start_x, start_y):
-        new_ingredient = AnimatedIngredient(ing, start_x, start_y)
-        self.animated_ingredients.append(new_ingredient)
-        self.is_animating = True
-        # Don't add color transition until ingredient reaches bowl
-        self.pending_color_transitions.append((INGREDIENT_COLORS.get(ing, (255, 255, 255)), ing))
+    def is_complete(self):
+        """Check if baking is complete"""
+        return self.baking_complete
 
-    def mix_colors(self, color1, color2):
-        """Mix colors while maintaining minimum visibility"""
-        mixed = mix_colors(color1, color2)
-        # Ensure each color component is at least min_color_value
-        return tuple(max(c, self.min_color_value) for c in mixed)
-
-    def start_color_transition(self, new_color):
-        # Check if we've hit the ingredient limit
-        if len(self.previous_colors) >= self.max_ingredients:
-            self.add_error_message("Bowl is too full! Cannot add more ingredients.")
+    def update(self):
+        """Update all particle effects"""
+        if self.baking_complete:
             return
-        
-        # If there's no existing color, just set it
-        if not self.bowl_color or self.bowl_color == (200, 200, 200):
-            self.bowl_color = ensure_rgb(new_color)
+
+        # Update baking timer
+        self.baking_timer += 1/60  # Assuming 60 FPS
+        if self.baking_timer >= self.baking_duration:
+            self.baking_complete = True
             return
+
+        # Update baking progress
+        self.baking_progress = min(1.0, self.baking_timer / self.baking_duration)
+
+        # Update smoke particles
+        for particle in self.smoke_particles[:]:
+            particle['x'] += particle['dx']
+            particle['y'] += particle['dy']
+            particle['alpha'] -= particle['fade_speed']
+            if particle['alpha'] <= 0:
+                self.smoke_particles.remove(particle)
+
+        # Update splash particles
+        for particle in self.splash_particles[:]:
+            particle['x'] += particle['dx']
+            particle['y'] += particle['dy']
+            particle['dy'] += particle['gravity']
+            particle['alpha'] -= particle['fade_speed']
+            if particle['alpha'] <= 0:
+                self.splash_particles.remove(particle)
+
+        # Update bubbles
+        for bubble in self.bubbles[:]:
+            bubble['y'] -= bubble['speed']
+            bubble['size'] *= 0.95
+            if bubble['size'] < 1:
+                self.bubbles.remove(bubble)
+
+        # Update steam particles
+        for particle in self.steam_particles[:]:
+            particle['x'] += particle['dx']
+            particle['y'] += particle['dy']
+            particle['alpha'] -= particle['fade_speed']
+            if particle['alpha'] <= 0:
+                self.steam_particles.remove(particle)
+
+        # Update heat distortion
+        self.heat_distortion = (self.heat_distortion + 1) % 360
+
+        # Add effects based on progress
+        if random.random() < 0.1 * self.baking_progress:
+            self.add_bubble()
+        if self.baking_progress > 0.5 and random.random() < 0.05:
+            self.add_steam_particle()
+
+    def draw(self, screen, center_x, center_y):
+        """Draw all baking effects"""
+        # Draw heat distortion
+        if self.heat_distortion > 0:
+            amplitude = 3 * self.baking_progress
+            wavelength = 20
+            for y in range(-30, 31, 2):
+                offset = amplitude * math.sin((y + self.heat_distortion) / wavelength)
+                alpha = int(100 * self.baking_progress)
+                heat_surface = pygame.Surface((80, 2), pygame.SRCALPHA)
+                pygame.draw.line(heat_surface, (255, 200, 100, alpha),
+                               (0, 1),
+                               (80, 1), 1)
+                screen.blit(heat_surface,
+                           (center_x - 40 + offset, center_y + y))
+
+        # Draw bubbles with progress-based intensity
+        for bubble in self.bubbles:
+            alpha = int(150 * self.baking_progress)
+            bubble_surface = pygame.Surface((int(bubble['size']*2), int(bubble['size']*2)), pygame.SRCALPHA)
+            pygame.draw.circle(bubble_surface, (255, 255, 255, alpha),
+                             (int(bubble['size']), int(bubble['size'])),
+                             int(bubble['size']))
+            screen.blit(bubble_surface,
+                       (int(center_x + bubble['x'] - bubble['size']),
+                        int(center_y + bubble['y'] - bubble['size'])))
+
+        # Draw steam particles with progress-based intensity
+        for particle in self.steam_particles:
+            alpha = int(particle['alpha'] * self.baking_progress)
+            steam_surface = pygame.Surface((particle['size'], particle['size']), pygame.SRCALPHA)
+            pygame.draw.circle(steam_surface, (255, 255, 255, alpha),
+                             (particle['size']//2, particle['size']//2),
+                             particle['size']//2)
+            screen.blit(steam_surface,
+                       (center_x + particle['x'] - particle['size']//2,
+                        center_y + particle['y'] - particle['size']//2))
+
+        # Draw completion effects
+        if self.baking_complete:
+            self.draw_completion_effects(screen, center_x, center_y)
+
+class GhibliMixingEffect:
+    def __init__(self):
+        self.particles = []
+        self.swirls = []
+        self.sparkles = []
         
-        try:
-            # Add new color to the mix
-            self.previous_colors.append(self.bowl_color)
-            
-            # Mix colors safely
-            mixed_color = ensure_rgb(new_color)
-            for color in self.previous_colors:
-                mixed_color = safe_color_mix(mixed_color, ensure_rgb(color))
-            
-            # Store the transition
-            self.color_transition = (self.bowl_color, mixed_color)
-            self.transition_progress = 0
-            
-        except Exception as e:
-            print(f"Error in color transition: {e}")
-            self.add_error_message("Error mixing ingredients!")
-    
-    def add_error_message(self, message):
-        """Add an error message to display"""
-        self.error_messages.append({
-            'text': message,
-            'timer': self.error_message_duration
+    def add_swirl(self, x, y, color):
+        self.swirls.append({
+            'x': x,
+            'y': y,
+            'radius': random.uniform(10, 30),
+            'angle': random.uniform(0, math.pi * 2),
+            'speed': random.uniform(1, 3),
+            'color': color,
+            'life': random.uniform(1, 2)
         })
     
-    def update_error_messages(self, dt):
-        """Update error message timers and remove expired messages"""
-        for msg in self.error_messages[:]:
-            msg['timer'] -= dt
-            if msg['timer'] <= 0:
-                self.error_messages.remove(msg)
+    def add_sparkle(self, x, y, color=(255, 255, 255)):
+        self.sparkles.append({
+            'x': x,
+            'y': y,
+            'size': random.uniform(1, 3),
+            'angle': random.uniform(0, math.pi * 2),
+            'color': color,
+            'life': random.uniform(0.3, 0.8)
+        })
     
-    def draw_error_messages(self, screen):
-        """Draw any active error messages"""
-        if not self.error_messages:
-            return
-            
-        font = pygame.font.Font(None, 36)
-        y_offset = 150  # Start below other UI elements
-        
-        for msg in self.error_messages:
-            # Create semi-transparent background
-            text = font.render(msg['text'], True, (255, 50, 50))
-            bg_surface = pygame.Surface((text.get_width() + 20, text.get_height() + 10), pygame.SRCALPHA)
-            pygame.draw.rect(bg_surface, (40, 0, 0, 180), bg_surface.get_rect(), border_radius=10)
-            
-            # Calculate position
-            x = WIDTH//2 - text.get_width()//2
-            
-            # Draw background and text
-            screen.blit(bg_surface, (x - 10, y_offset - 5))
-            screen.blit(text, (x, y_offset))
-            
-            y_offset += 40  # Space between messages
-    
-    def update_bowl_color(self):
-        if self.color_transition:
-            self.transition_progress += self.transition_speed
-            if self.transition_progress >= 1:
-                self.bowl_color = self.color_transition[1]
-                self.color_transition = None
-                self.add_sparkle_effect()
+    def update(self, dt):
+        # Update swirls
+        for swirl in self.swirls[:]:
+            swirl['life'] -= dt
+            if swirl['life'] <= 0:
+                self.swirls.remove(swirl)
             else:
-                # Smooth transition between colors
-                progress = self.transition_progress
-                start_color = self.color_transition[0]
-                end_color = self.color_transition[1]
-                
-                # Linear interpolation between colors
-                current_color = tuple(
-                    int(start_color[i] * (1 - progress) + end_color[i] * progress)
-                    for i in range(3)
-                )
-                self.bowl_color = current_color
+                swirl['angle'] += swirl['speed'] * dt
+                swirl['radius'] *= 0.99
+        
+        # Update sparkles
+        for sparkle in self.sparkles[:]:
+            sparkle['life'] -= dt
+            if sparkle['life'] <= 0:
+                self.sparkles.remove(sparkle)
+            else:
+                sparkle['size'] *= 0.95
+    
+    def draw(self, surface):
+        # Draw swirls
+        for swirl in self.swirls:
+            alpha = int(255 * (swirl['life'] / 2.0))
+            points = []
+            for i in range(8):  # Create spiral points
+                angle = swirl['angle'] + (i * math.pi / 4)
+                r = swirl['radius'] * (1 - i/16)
+                x = swirl['x'] + math.cos(angle) * r
+                y = swirl['y'] + math.sin(angle) * r
+                points.append((x, y))
+            if len(points) > 1:
+                color_with_alpha = (*swirl['color'], alpha)
+                pygame.draw.lines(surface, color_with_alpha, False, points, 2)
+        
+        # Draw sparkles
+        for sparkle in self.sparkles:
+            alpha = int(255 * (sparkle['life'] / 0.8))
+            color_with_alpha = (*sparkle['color'], alpha)
+            size = sparkle['size']
+            x, y = sparkle['x'], sparkle['y']
+            # Draw a star shape
+            for i in range(4):
+                angle = sparkle['angle'] + (i * math.pi / 4)
+                end_x = x + math.cos(angle) * size * 2
+                end_y = y + math.sin(angle) * size * 2
+                pygame.draw.line(surface, color_with_alpha, (x, y), (end_x, end_y), 1)
 
-    def add_sparkle_effect(self):
-        # Create a surface for the sparkle effects
-        sparkle_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        
-        # Add multiple layers of sparkles with different sizes and colors
-        for _ in range(20):  # Increased number of sparkles
-            x = random.randint(WIDTH//2 - 100, WIDTH//2 + 100)
-            y = random.randint(HEIGHT//2 - 50, HEIGHT//2 + 50)
-            size = random.randint(2, 6)  # Varied sizes
-            
-            # Create a glowing effect with multiple circles
-            for radius in range(size, 0, -1):
-                alpha = int(200 * (radius/size))
-                glow_color = tuple(min(255, c + 100) for c in self.bowl_color)  # Brighter version
-                pygame.draw.circle(sparkle_surface, (*glow_color, alpha), (x, y), radius)
-        
-        # Add some shooting sparkles
-        for _ in range(10):
-            angle = random.uniform(0, 2 * math.pi)
-            distance = random.randint(30, 80)
-            x = WIDTH//2 + math.cos(angle) * distance
-            y = HEIGHT//2 + math.sin(angle) * distance
-            pygame.draw.circle(sparkle_surface, (255, 255, 255, 200), (int(x), int(y)), 2)
-        
-        return sparkle_surface
+class MixingLayer:
+    def __init__(self, ingredient, y_offset=0):
+        self.ingredient = ingredient
+        self.color = INGREDIENT_COLORS.get(ingredient, (200, 200, 200))
+        self.type = INGREDIENT_TYPES.get(ingredient, "dry")
+        self.mixing_progress = 0
+        self.y_offset = y_offset
+        self.surface_points = []
+        self.surface_offset = 0
 
-    def update_animations(self, screen, game, dt):
-        # Update error messages
-        self.update_error_messages(dt)
+    def update(self, dt):
+        """Update the mixing layer animation"""
+        # Update mixing progress
+        if self.mixing_progress < 1:
+            self.mixing_progress = min(1, self.mixing_progress + dt * 0.5)
         
-        # Store the disaster message state at the start
-        should_show_disaster = self.disaster_timer > 0 and self.current_disaster
-        
-        self.update_bowl_color()
-        
-        # Handle disaster effects first
-        if self.disaster_timer > 0:
-            # Create red overlay
-            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            pygame.draw.rect(overlay, (255, 0, 0, 128), overlay.get_rect())
-            screen.blit(overlay, (0, 0))
-            
-            # Update and draw the specific disaster effect
-            if self.current_disaster == "Oven malfunction":
-                self.update_oven_fire(screen)
-            elif self.current_disaster == "Power outage":
-                self.update_power_flicker(screen)
-            elif self.current_disaster == "Ingredient spill":
-                self.update_spill_particles(screen)
-        
-        # Continue with regular animations
-        self.draw_mixing_bowl(screen, game)
-        
-        # Update ingredient effects
-        if self.flour_clouds or self.sugar_crystals or self.liquid_droplets:
-            self.update_ingredient_effects(screen)
-        
-        # Handle animated ingredients
-        if self.animated_ingredients:
-            completed = []
-            for i, ingredient in enumerate(self.animated_ingredients):
-                if ingredient.move():
-                    completed.append(i)
-                    if self.pending_color_transitions:
-                        new_color, ing_type = self.pending_color_transitions.pop(0)
-                        self.start_color_transition(new_color)
-                        if ing_type in self.ingredient_effects:
-                            self.ingredient_effects[ing_type]()
-                        self.bowl_fill_level += 0.1
-                        if self.bowl_fill_level > 1:
-                            self.bowl_fill_level = 1
-                else:
-                    ingredient.draw(screen)
-            
-            for i in reversed(completed):
-                self.animated_ingredients.pop(i)
-            
-            self.is_animating = bool(self.animated_ingredients)
-        else:
-            self.is_animating = False
+        # Update surface animation
+        self.surface_offset += dt * 2
+        self.update_surface_points()
 
-        # Draw sparkle effects
-        if self.color_transition:
-            sparkle_surface = self.add_sparkle_effect()
-            screen.blit(sparkle_surface, (0, 0))
-        
-        # Draw error messages and disaster message last
-        self.draw_error_messages(screen)
-        self.draw_disaster_message(screen)
-
-    def reset_bowl(self):
-        """Reset the bowl fill level to zero and reset color"""
-        self.bowl_fill_level = 0
-        self.bowl_color = (200, 200, 200)
-        self.color_transition = None
-        self.animated_ingredients.clear()
-        self.is_animating = False
-        self.previous_colors = []  # Clear color history
-
-    def draw_mixing_bowl(self, screen, game):
-        bowl_color = BLUE if "Larger Bowl" in game.active_upgrades else DARK_GRAY
-        bowl_size = 160 if "Larger Bowl" in game.active_upgrades else 150
-        
-        # Draw bowl glow with enhanced effect
-        glow_surface = pygame.Surface((bowl_size + 20, 150), pygame.SRCALPHA)
-        for r in range(10, 0, -1):
-            alpha = int(25 * r)
-            pygame.draw.ellipse(glow_surface, (*self.bowl_color, alpha), 
-                              (r, r, bowl_size + 20 - 2*r, 50 - r))
-        screen.blit(glow_surface, (WIDTH//2 - (bowl_size + 20)//2, HEIGHT//2 - 35))
-        
-        # Draw bowl outline with enhanced neon effect
-        for i in range(3):
-            alpha = 255 - i * 50
-            pygame.draw.ellipse(screen, (*bowl_color, alpha), 
-                              (WIDTH//2 - bowl_size//2 - i, HEIGHT//2 - 25 - i, 
-                               bowl_size + i*2, 50 + i*2), 2)
-        
-        # Draw liquid contents with dynamic effects
-        if self.bowl_fill_level > 0:
-            fill_height = int(max(self.bowl_fill_level, 0.1) * 100)
-            gradient_surface = pygame.Surface((bowl_size - 4, fill_height), pygame.SRCALPHA)
-            
-            # Create dynamic liquid effect
-            current_time = time.time()
-            
-            # Wave parameters
-            wave_speed = 2
-            wave_height = 3
-            num_waves = 3
-            
-            for y in range(fill_height):
-                progress = y / fill_height
-                
-                # Create multiple overlapping waves
-                wave_offset = 0
-                for i in range(num_waves):
-                    wave_offset += math.sin(current_time * wave_speed + y * 0.1 + i * 2) * wave_height
-                
-                # Adjust wave effect based on number of ingredients
-                wave_intensity = min(1.0, len(game.current_ingredients) * 0.2)
-                wave_offset *= wave_intensity
-                
-                # Base color with alpha
-                alpha = int(255 * (0.5 + 0.5 * progress))
-                base_color = self.bowl_color[:3]  # Ensure RGB only
-                glow_color = tuple(min(255, c + 50) for c in base_color)  # Brighter version
-                
-                # Create proper RGBA colors
-                base_rgba = (*base_color, alpha)
-                glow_rgba = (*glow_color, alpha)
-                
-                # Draw the liquid line with wave effect
-                x_offset = int(wave_offset)
-                pygame.draw.line(gradient_surface, base_rgba,
-                               (max(0, x_offset), y),
-                               (min(bowl_size - 4, bowl_size - 4 + x_offset), y))
-                
-                # Add bubbles with proper RGBA colors
-                if random.random() < 0.02 * wave_intensity:
-                    bubble_x = random.randint(10, bowl_size - 14)
-                    bubble_size = random.randint(2, 4)
-                    bubble_alpha = random.randint(100, 200)
-                    pygame.draw.circle(gradient_surface, (*glow_color, bubble_alpha),
-                                     (bubble_x, y), bubble_size)
-            
-            # Add dynamic swirl effects
-            swirl_time = current_time * 3
-            for i in range(3):
-                swirl_x = bowl_size//2 + math.cos(swirl_time + i*2) * 20
-                swirl_y = fill_height//2 + math.sin(swirl_time + i*2) * 10
-                swirl_color = (*glow_color, 150)
-                
-                # Draw swirl pattern
-                for angle in range(0, 360, 30):
-                    rad = math.radians(angle)
-                    end_x = swirl_x + math.cos(rad + swirl_time) * 10
-                    end_y = swirl_y + math.sin(rad + swirl_time) * 5
-                    if 0 <= end_x <= bowl_size-4 and 0 <= end_y <= fill_height:
-                        pygame.draw.line(gradient_surface, swirl_color,
-                                       (swirl_x, swirl_y), (end_x, end_y), 2)
-            
-            # Add magical sparkles
-            for _ in range(int(fill_height / 5)):
-                spark_x = random.randint(0, bowl_size - 4)
-                spark_y = random.randint(0, fill_height)
-                spark_size = random.randint(1, 3)
-                spark_alpha = random.randint(150, 255)
-                
-                # Draw star-shaped sparkle
-                for angle in range(0, 360, 45):
-                    rad = math.radians(angle)
-                    end_x = spark_x + math.cos(rad) * spark_size
-                    end_y = spark_y + math.sin(rad) * spark_size
-                    pygame.draw.line(gradient_surface, (255, 255, 255, spark_alpha),
-                                   (spark_x, spark_y), (end_x, end_y), 1)
-            
-            # Add color swirls when mixing
-            if self.color_transition:
-                transition_color = self.color_transition[1]
-                swirl_points = []
-                swirl_time = current_time * 2
-                for i in range(5):
-                    x = bowl_size//2 + math.cos(swirl_time + i) * (20 - i*3)
-                    y = fill_height//2 + math.sin(swirl_time + i) * (10 - i*2)
-                    swirl_points.append((x, y))
-                
-                if len(swirl_points) > 2:
-                    pygame.draw.lines(gradient_surface, (*transition_color, 200),
-                                    False, swirl_points, 3)
-            
-            # Blit the liquid to the screen
-            screen.blit(gradient_surface, 
-                       (WIDTH//2 - bowl_size//2 + 2, HEIGHT//2 + 73 - fill_height))
-            
-            # Add surface reflection
-            reflection_height = 10
-            reflection_surface = pygame.Surface((bowl_size - 4, reflection_height), pygame.SRCALPHA)
-            pygame.draw.ellipse(reflection_surface, (255, 255, 255, 30),
-                              (0, 0, bowl_size - 4, reflection_height * 2))
-            screen.blit(reflection_surface,
-                       (WIDTH//2 - bowl_size//2 + 2, HEIGHT//2 + 73 - fill_height))
-
-    def draw_disaster_animations(self, screen):
-        if self.spill_line:
-            if len(self.spill_line) < 50:
-                last_point = self.spill_line[-1]
-                self.spill_line.append((last_point[0], last_point[1] + 10))
-            pygame.draw.lines(screen, GRAY, False, self.spill_line, 5)
-
-        if self.power_flicker:
-            screen.fill(DARK_GRAY)
-            self.power_flicker = not self.power_flicker
-
-        for flame in self.oven_fire:
-            pygame.draw.circle(screen, RED, flame, random.randint(5, 15))
-            pygame.draw.circle(screen, YELLOW, flame, random.randint(3, 8))
-
-    def trigger_disaster_animation(self, disaster_type, game=None):
-        self.disaster_message = f"DISASTER: {disaster_type}!"
-        self.disaster_timer = self.disaster_duration
-        self.current_disaster = disaster_type
-        
-        # For ingredient spill, we need to handle the current ingredients
-        if disaster_type == "Ingredient spill":
-            num_particles = 30  # Default number
-            if game and hasattr(game, 'current_ingredients'):
-                num_particles = max(30, len(game.current_ingredients) * 15)
-            self.trigger_spill_effect(num_particles)
-        elif disaster_type == "Power outage":
-            self.trigger_power_flicker_effect()
-        elif disaster_type == "Oven malfunction":
-            self.trigger_oven_fire_effect()
-
-    def clear_disaster_animations(self):
-        """Clear all disaster-related effects"""
-        self.spill_line = []
-        self.power_flicker = False
-        self.oven_fire = []
-        self.flame_particles = []
-        self.disaster_particles = []
-        self.flicker_count = 0
-        self.current_disaster = None
-        self.disaster_timer = 0
-
-    def draw_disaster_message(self, screen):
-        if not self.disaster_message or self.disaster_timer <= 0:
-            return
-            
-        try:
-            # Create semi-transparent overlay
-            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            pygame.draw.rect(overlay, (255, 0, 0, 128), overlay.get_rect())
-            screen.blit(overlay, (0, 0))
-            
-            # Create background for text
-            font = pygame.font.Font(None, 48)
-            text = font.render(self.disaster_message, True, WHITE[:3])
-            
-            # Add pulsing effect
-            pulse = abs(math.sin(pygame.time.get_ticks() * 0.005)) * 0.2 + 0.8
-            scaled_size = (
-                int(text.get_width() * pulse),
-                int(text.get_height() * pulse)
+    def update_surface_points(self):
+        """Update the surface points for organic movement"""
+        self.surface_points = []
+        num_points = 20
+        for i in range(num_points):
+            x = (i / (num_points - 1) - 0.5) * 2
+            # Create organic movement with multiple sine waves
+            y_offset = (
+                math.sin(x * 10 + self.surface_offset) * 2 +
+                math.sin(x * 5 + self.surface_offset * 0.7) * 3 +
+                math.sin(x * 2 + self.surface_offset * 1.3)
             )
-            
-            # Create background surface
-            padding = 20
-            bg_surface = pygame.Surface((scaled_size[0] + padding * 2, 
-                                      scaled_size[1] + padding * 2), pygame.SRCALPHA)
-            pygame.draw.rect(bg_surface, (40, 0, 0, 200), 
-                           bg_surface.get_rect(), border_radius=15)
-            
-            # Position and draw
-            x = WIDTH//2 - scaled_size[0]//2
-            y = HEIGHT//2 - scaled_size[1]//2
-            
-            screen.blit(bg_surface, (x - padding, y - padding))
-            
-            # Scale and draw the text
-            scaled_text = pygame.transform.smoothscale(text, scaled_size)
-            screen.blit(scaled_text, (x, y))
-            
-        except Exception as e:
-            print(f"Error drawing disaster message: {e}")
-    
-    def trigger_oven_fire_effect(self):
-        # Create more flame particles that rise from bottom of screen
-        for _ in range(40):  # Increased from 20
-            x = random.randint(0, WIDTH)
-            y = HEIGHT + random.randint(0, 50)
-            speed = random.uniform(3, 7)  # Increased speed
-            size = random.randint(50, 120)  # Increased size
-            self.flame_particles.append({
-                'x': x, 'y': y,
-                'speed': speed,
-                'size': size,
-                'wobble': random.uniform(0, 2 * math.pi),
-                'intensity': random.uniform(0.8, 1.2)  # Variation in flame intensity
-            })
+            self.surface_points.append((x, self.y_offset + y_offset))
 
-    def update_oven_fire(self, screen):
-        if self.flame_particles:
-            # Create an overlay for the heat distortion effect
-            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            overlay.fill((255, 50, 0, 30))  # Red tint with alpha
-            screen.blit(overlay, (0, 0))
+    def draw(self, screen, center_x, center_y, bowl_width, bowl_height):
+        """Draw the mixing layer"""
+        if not self.surface_points:
+            return
             
-            for flame in self.flame_particles[:]:
-                flame['y'] -= flame['speed']
-                flame['wobble'] += 0.1
-                x = flame['x'] + math.sin(flame['wobble']) * 20
-                
-                # Enhanced flame gradient with proper RGBA tuples
-                colors = [
-                    (255, 50, 0, 200),    # Red
-                    (255, 150, 0, 180),   # Orange
-                    (255, 200, 0, 160),   # Yellow
-                    (255, 255, 200, 140)  # White-yellow core
-                ]
-                
-                for i, color in enumerate(colors):
-                    size = flame['size'] * (1 - i * 0.2) * flame['intensity']
-                    surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
-                    pygame.draw.ellipse(surf, color, (0, 0, size * 2, size * 2))
-                    screen.blit(surf, (x - size, flame['y'] - size))
-                
-                if flame['y'] < -100:
-                    self.flame_particles.remove(flame)
-
-    def trigger_power_flicker_effect(self):
-        self.flicker_count = 30  # More flickers
-        self.flicker_intensity = random.uniform(0.5, 1.0)
-
-    def update_power_flicker(self, screen):
-        if self.flicker_count > 0:
-            if self.flicker_count % 2 == 0:
-                intensity = int(255 * self.flicker_intensity)
-                screen.fill((intensity, intensity, intensity))
-            else:
-                screen.fill((0, 0, 0))
-            self.flicker_count -= 1
-
-    def trigger_spill_effect(self, num_particles=30):
-        bowl_center = (WIDTH//2, HEIGHT//2)
+        # Convert relative coordinates to screen coordinates
+        screen_points = []
+        for x, y in self.surface_points:
+            screen_x = center_x + x * bowl_width/2
+            screen_y = center_y + y
+            screen_points.append((screen_x, screen_y))
         
-        for _ in range(num_particles):
-            angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(8, 20)
-            size = random.randint(30, 70)
-            # Ensure RGB format for bowl color
-            color = (self.bowl_color[:3] if len(self.bowl_color) > 3 else self.bowl_color) if self.bowl_color != (200, 200, 200) else random.choice([c[:3] if len(c) > 3 else c for c in INGREDIENT_COLORS.values()])
-            
-            self.disaster_particles.append({
-                'x': bowl_center[0],
-                'y': bowl_center[1],
-                'dx': math.cos(angle) * speed,
-                'dy': math.sin(angle) * speed - 8,
-                'size': size,
-                'color': color,
-                'gravity': 0.4,
-                'squish': 1.0,
-                'rotation': random.uniform(0, 360),
-                'spin': random.uniform(-5, 5)
-            })
-
-    def update_spill_particles(self, screen):
-        if self.disaster_particles:
-            for particle in self.disaster_particles[:]:
-                # Update position with more dynamic movement
-                particle['x'] += particle['dx']
-                particle['dy'] += particle['gravity']
-                particle['y'] += particle['dy']
-                particle['rotation'] += particle['spin']
-                
-                # Enhanced squish effect when hitting bottom
-                if particle['y'] + particle['size'] > HEIGHT:
-                    particle['dy'] *= -0.6
-                    particle['dx'] *= 0.8
-                    particle['squish'] = 0.5
-                    particle['spin'] *= 0.8
-                else:
-                    particle['squish'] = max(0.8, particle['squish'] + 0.05)
-                
-                # Draw blob with rotation and proper RGBA
-                size_x = particle['size'] * 2
-                size_y = particle['size'] * 2 * particle['squish']
-                surf = pygame.Surface((size_x, size_y), pygame.SRCALPHA)
-                
-                # Draw main blob with alpha
-                color = (*particle['color'][:3], 200)  # Ensure RGB + alpha
-                pygame.draw.ellipse(surf, color, (0, 0, size_x, size_y))
-                
-                # Rotate and draw
-                rotated_surf = pygame.transform.rotate(surf, particle['rotation'])
-                screen.blit(rotated_surf, (particle['x'] - rotated_surf.get_width()//2,
-                                         particle['y'] - rotated_surf.get_height()//2))
-                
-                if particle['y'] > HEIGHT + 100:
-                    self.disaster_particles.remove(particle)
-
-    def add_flour_effect(self):
-        # Create flour puff cloud
-        for _ in range(10):
-            self.flour_clouds.append({
-                'x': WIDTH//2 + random.randint(-30, 30),
-                'y': HEIGHT//2 + random.randint(-10, 10),
-                'size': random.randint(10, 20),
-                'alpha': 255,
-                'fade_speed': random.uniform(2, 4)
-            })
-
-    def add_sugar_effect(self):
-        # Create sparkly crystallization effect
-        for _ in range(15):
-            self.sugar_crystals.append({
-                'x': WIDTH//2 + random.randint(-40, 40),
-                'y': HEIGHT//2 + random.randint(-20, 20),
-                'size': random.randint(1, 3),
-                'sparkle_time': 0,
-                'lifetime': random.randint(30, 60)
-            })
-
-    def add_egg_effect(self):
-        # Create egg crack and splash effect
-        center_x = WIDTH//2
-        center_y = HEIGHT//2
-        for _ in range(20):
-            angle = random.uniform(0, math.pi)  # Upper half circle
-            speed = random.uniform(2, 5)
-            self.liquid_droplets.append({
-                'x': center_x,
-                'y': center_y,
-                'dx': math.cos(angle) * speed,
-                'dy': -math.sin(angle) * speed,
-                'size': random.randint(2, 4),
-                'color': (255, 250, 220),  # Egg yolk color
-                'gravity': 0.2,
-                'lifetime': 30
-            })
-
-    def add_liquid_effect(self):
-        # Create liquid splash effect
-        for _ in range(15):
-            angle = random.uniform(0, math.pi * 2)
-            speed = random.uniform(1, 3)
-            self.liquid_droplets.append({
-                'x': WIDTH//2 + random.randint(-20, 20),
-                'y': HEIGHT//2,
-                'dx': math.cos(angle) * speed,
-                'dy': math.sin(angle) * speed,
-                'size': random.randint(2, 5),
-                'color': self.bowl_color,
-                'gravity': 0.1,
-                'lifetime': 40
-            })
-
-    def add_butter_effect(self):
-        # Create melting butter effect with golden droplets
-        for _ in range(12):
-            self.liquid_droplets.append({
-                'x': WIDTH//2 + random.randint(-30, 30),
-                'y': HEIGHT//2 - 20,
-                'dx': random.uniform(-0.5, 0.5),
-                'dy': random.uniform(0.5, 1.5),
-                'size': random.randint(3, 6),
-                'color': (255, 220, 100),  # Golden color
-                'gravity': 0.05,
-                'lifetime': 50
-            })
-
-    def update_ingredient_effects(self, screen):
-        # Update flour clouds
-        for cloud in self.flour_clouds[:]:
-            cloud['alpha'] = max(0, int(cloud['alpha'] - cloud['fade_speed']))
-            if cloud['alpha'] <= 0:
-                self.flour_clouds.remove(cloud)
-            else:
-                surf = pygame.Surface((cloud['size'] * 2, cloud['size'] * 2), pygame.SRCALPHA)
-                pygame.draw.circle(surf, (255, 255, 255, cloud['alpha']),
-                                (cloud['size'], cloud['size']), cloud['size'])
-                screen.blit(surf, (cloud['x'] - cloud['size'], cloud['y'] - cloud['size']))
-
-        # Update sugar crystals
-        for crystal in self.sugar_crystals[:]:
-            crystal['sparkle_time'] += 1
-            if crystal['sparkle_time'] >= crystal['lifetime']:
-                self.sugar_crystals.remove(crystal)
-            else:
-                sparkle_alpha = int(255 * abs(math.sin(crystal['sparkle_time'] * 0.2)))
-                color = (*self.bowl_color, sparkle_alpha)  # Create proper RGBA tuple
-                pygame.draw.circle(screen, color, 
-                                (int(crystal['x']), int(crystal['y'])), 
-                                crystal['size'])
-
-        # Update liquid droplets
-        for drop in self.liquid_droplets[:]:
-            drop['x'] += drop['dx']
-            drop['dy'] += drop['gravity']
-            drop['y'] += drop['dy']
-            drop['lifetime'] -= 1
-            
-            if drop['lifetime'] <= 0:
-                self.liquid_droplets.remove(drop)
-            else:
-                alpha = int(255 * (drop['lifetime'] / 40))
-                # Ensure color is RGB before adding alpha
-                base_color = drop['color'][:3] if len(drop['color']) > 3 else drop['color']
-                color = (*base_color, alpha)  # Create proper RGBA tuple
-                pygame.draw.circle(screen, color,
-                                (int(drop['x']), int(drop['y'])), drop['size'])
+        # Add bottom points to complete the polygon
+        screen_points.append((center_x + bowl_width/2, center_y + bowl_height/2))
+        screen_points.append((center_x - bowl_width/2, center_y + bowl_height/2))
+        
+        # Draw the layer with transparency based on mixing progress
+        alpha = int(200 + 55 * self.mixing_progress)
+        color_surface = pygame.Surface((bowl_width, bowl_height), pygame.SRCALPHA)
+        pygame.draw.polygon(color_surface, (*self.color, alpha), screen_points)
+        screen.blit(color_surface, (center_x - bowl_width/2, center_y - bowl_height/2))
+        
+        # Draw surface line for definition
+        if len(screen_points) > 2:
+            surface_line_points = screen_points[:-2]  # Exclude bottom points
+            pygame.draw.lines(screen, (*self.color, 255), False, surface_line_points, 2)
 
 def flash_screen_red(screen):
+    """Flash the screen red to indicate an error"""
     for _ in range(3):  # Flash 3 times
         screen.fill(RED)
         pygame.display.flip()
-        pygame.time.delay(200)
+        pygame.time.delay(50)
         screen.fill(WHITE)
         pygame.display.flip()
-        pygame.time.delay(200)
+        pygame.time.delay(50)
 
-class PopupText:
-    def __init__(self, text, x, y):
-        self.text = text
-        self.x = x
-        self.y = y
+class AnimatedIngredient:
+    def __init__(self, ingredient, start_x, start_y, target_y=HEIGHT//2 + 30):
+        self.ingredient = ingredient
+        self.x = start_x
+        self.y = start_y
+        self.target_x = WIDTH // 2
+        self.target_y = target_y
+        self.dx = 0
+        self.dy = 0
+        self.speed = random.uniform(5, 8)
+        self.size = random.randint(15, 20)
+        self.color = INGREDIENT_COLORS.get(ingredient, (200, 200, 200))
         self.alpha = 255
-        self.font = pygame.font.Font(None, 48)
         self.fade_speed = 5
+        self.particles = []
+        self.done = False
+        self.settled = False
+        self.type = INGREDIENT_TYPES.get(ingredient, "dry")
+        self.gravity = 0.5 if self.type == "dry" else 0.3
+        self.bounce_damping = 0.5
+        self.settling_speed = 0.2 if self.type == "liquid" else 0.1
+        self.max_bounce_height = 20
+        self.min_movement_threshold = 0.1
 
-    def update(self):
-        self.alpha = max(0, self.alpha - self.fade_speed)
-        self.y -= 1
+    def update(self, current_bowl_level):
+        """Update the ingredient animation"""
+        if self.done:
+            return True
+
+        if not self.settled:
+            # Calculate direction to target
+            dx = self.target_x - self.x
+            dy = self.target_y - self.y
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            if distance < self.speed:
+                self.settled = True
+                self.dx = 0
+                self.dy = 0
+            else:
+                # Apply gravity during initial movement
+                self.dy += self.gravity * 0.5
+                
+                # Calculate movement direction
+                move_dx = (dx / distance) * self.speed
+                move_dy = (dy / distance) * self.speed + self.dy
+                
+                # Update position
+                self.x += move_dx
+                self.y += move_dy
+                
+                # Add movement particles
+                if random.random() < 0.3:
+                    self.add_movement_particle()
+        else:
+            # Apply gravity and fluid dynamics
+            if self.type == "liquid":
+                # Liquids spread out and settle quickly
+                self.dy += self.gravity * 0.8
+                self.dx *= 0.95  # Dampen horizontal movement
+            else:
+                # Solid ingredients bounce and roll
+                self.dy += self.gravity
+                self.dx *= 0.98  # Slight horizontal damping
+            
+            # Update position
+            self.x += self.dx
+            self.y += self.dy
+            
+            # Calculate bowl bottom based on current fill level
+            bowl_bottom = HEIGHT//2 + 40 - (80 * current_bowl_level)  # Adjust based on bowl fill
+            
+            # Bowl bottom collision
+            if self.y + self.size > bowl_bottom:
+                self.y = bowl_bottom - self.size
+                if abs(self.dy) > self.min_movement_threshold:
+                    # Bounce with damping
+                    self.dy = -abs(self.dy) * self.bounce_damping
+                    # Add bounce particles
+                    self.add_bounce_particles()
+                else:
+                    self.dy = 0
+                    if abs(self.dx) < self.min_movement_threshold:
+                        self.done = True
+            
+            # Bowl sides collision
+            bowl_left = WIDTH//2 - 70
+            bowl_right = WIDTH//2 + 70
+            
+            if self.x - self.size < bowl_left:
+                self.x = bowl_left + self.size
+                self.dx = abs(self.dx) * self.bounce_damping
+                self.add_collision_particles("left")
+            elif self.x + self.size > bowl_right:
+                self.x = bowl_right - self.size
+                self.dx = -abs(self.dx) * self.bounce_damping
+                self.add_collision_particles("right")
+            
+            # Add movement particles based on velocity
+            if (abs(self.dx) > 1 or abs(self.dy) > 1) and random.random() < 0.3:
+                self.add_movement_particle()
+        
+        # Update existing particles
+        self.update_particles()
+        
+        return self.done
+
+    def add_movement_particle(self):
+        """Add particles that follow the ingredient's movement"""
+        particle = {
+            'x': self.x + random.uniform(-self.size/2, self.size/2),
+            'y': self.y + random.uniform(-self.size/2, self.size/2),
+            'dx': -self.dx * random.uniform(0.1, 0.3),
+            'dy': -self.dy * random.uniform(0.1, 0.3),
+            'size': random.randint(2, 4),
+            'alpha': 150,
+            'fade_speed': random.uniform(5, 10)
+        }
+        self.particles.append(particle)
+
+    def add_bounce_particles(self):
+        """Add particles when the ingredient bounces"""
+        num_particles = random.randint(3, 6)
+        for _ in range(num_particles):
+            particle = {
+                'x': self.x + random.uniform(-self.size/2, self.size/2),
+                'y': self.y + self.size/2,
+                'dx': random.uniform(-2, 2),
+                'dy': random.uniform(-3, -1),
+                'size': random.randint(2, 4),
+                'alpha': 200,
+                'fade_speed': random.uniform(8, 12)
+            }
+            self.particles.append(particle)
+
+    def add_collision_particles(self, side):
+        """Add particles when the ingredient collides with bowl sides"""
+        num_particles = random.randint(2, 4)
+        for _ in range(num_particles):
+            dx = 2 if side == "left" else -2
+            particle = {
+                'x': self.x + (self.size/2 if side == "left" else -self.size/2),
+                'y': self.y + random.uniform(-self.size/2, self.size/2),
+                'dx': random.uniform(0.5, 1.5) * dx,
+                'dy': random.uniform(-1, 1),
+                'size': random.randint(2, 4),
+                'alpha': 180,
+                'fade_speed': random.uniform(8, 12)
+            }
+            self.particles.append(particle)
+
+    def update_particles(self):
+        """Update all particles"""
+        for particle in self.particles[:]:
+            particle['x'] += particle['dx']
+            particle['y'] += particle['dy']
+            particle['dy'] += 0.1  # Particle gravity
+            particle['alpha'] -= particle['fade_speed']
+            if particle['alpha'] <= 0:
+                self.particles.remove(particle)
 
     def draw(self, screen):
-        # Create main text surface with proper color handling
-        text_surface = self.font.render(self.text, True, (255, 255, 255))
+        """Draw the ingredient and its particles"""
+        # Draw particles
+        for particle in self.particles:
+            alpha_surface = pygame.Surface((particle['size'], particle['size']), pygame.SRCALPHA)
+            pygame.draw.circle(alpha_surface, (*self.color, int(particle['alpha'])),
+                             (particle['size']//2, particle['size']//2), particle['size']//2)
+            screen.blit(alpha_surface,
+                       (particle['x'] - particle['size']//2,
+                        particle['y'] - particle['size']//2))
         
-        # Create semi-transparent background with padding
-        padding = 20
-        bg_surface = pygame.Surface((text_surface.get_width() + padding * 2, 
-                                   text_surface.get_height() + padding * 2), 
-                                   pygame.SRCALPHA)
-        
-        # Draw rounded rectangle background with proper alpha
-        bg_color = (40, 0, 0, int(self.alpha * 0.9))
-        pygame.draw.rect(bg_surface, bg_color, bg_surface.get_rect(), border_radius=12)
-        
-        # Calculate positions
-        bg_x = self.x - bg_surface.get_width() // 2
-        bg_y = self.y - bg_surface.get_height() // 2
-        text_x = self.x - text_surface.get_width() // 2
-        text_y = self.y - text_surface.get_height() // 2
-        
-        # Create a new surface for text with alpha
-        alpha_surface = pygame.Surface(text_surface.get_size(), pygame.SRCALPHA)
-        alpha_surface.fill((255, 255, 255, self.alpha))
-        text_surface.blit(alpha_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-        
-        # Draw background and text
-        screen.blit(bg_surface, (bg_x, bg_y))
-        screen.blit(text_surface, (text_x, text_y))
-
-    def is_finished(self):
-        return self.alpha <= 0
+        # Draw ingredient with glow effect
+        if not self.done or self.type in ['dry', 'solid']:
+            # Draw glow
+            glow_size = self.size + 4
+            glow_surface = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
+            glow_color = (*self.color, 100)  # Semi-transparent glow
+            pygame.draw.circle(glow_surface, glow_color,
+                             (glow_size, glow_size), glow_size)
+            screen.blit(glow_surface,
+                       (int(self.x - glow_size),
+                        int(self.y - glow_size)))
+            
+            # Draw main ingredient
+            pygame.draw.circle(screen, self.color,
+                             (int(self.x), int(self.y)), self.size)

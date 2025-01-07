@@ -22,12 +22,19 @@ def handle_events(game, animation_manager):
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             return False
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                return False
-            handle_keydown(event, game)
+            
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            handle_mouse_click(event, game, animation_manager)
+            if event.button == 1:  # Left click
+                handle_mouse_click(event, game, animation_manager)
+                
+        elif event.type == pygame.KEYDOWN:
+            handle_keydown(event, game)
+            
+        elif event.type == pygame.USEREVENT:
+            # Reset click states for all sprites
+            for sprite in game.ingredient_sprites:
+                sprite.reset_click()
+    
     return True
 
 def handle_keydown(event, game):
@@ -60,15 +67,19 @@ def handle_mouse_click(event, game, animation_manager):
                 print("Ingredients replenished!")  # Debug print
             return
         
-        # Handle existing click logic
+        # Handle ingredient clicks
         if y >= HEIGHT - 50:
             if game.purchase_upgrade(event.pos):
                 print("Upgrade purchased!")  # Debug print
         else:
-            ing, start_x, start_y = game.handle_ingredient_click(x, y)
-            if ing:
-                animation_manager.add_ingredient_animation(ing, start_x, start_y)
-    # Add more states as needed
+            # Check for sprite clicks first
+            for sprite in game.ingredient_sprites:
+                if sprite.rect.collidepoint(event.pos):
+                    if sprite.handle_click():  # This will handle visual feedback
+                        ing, start_x, start_y = game.handle_ingredient_click(x, y)
+                        if ing:
+                            animation_manager.add_ingredient_animation(ing, start_x, start_y)
+                    break  # Exit after handling first clicked sprite
 
 def main():
     # Initialize Pygame with error handling

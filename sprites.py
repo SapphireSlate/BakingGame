@@ -44,23 +44,53 @@ class IngredientSprite(pygame.sprite.Sprite):
         self.bounce_speed = 0.05
         self.bounce_offset = 0
         
+        # Add hover and click effects
+        self.is_hovered = False
+        self.is_clicked = False
+        self.hover_scale = 1.1
+        self.click_scale = 0.9
+        self.normal_radius = 35
+        self.hover_radius = int(self.normal_radius * self.hover_scale)
+        self.click_radius = int(self.normal_radius * self.click_scale)
+        self.current_radius = self.normal_radius
+        
         self.draw_character()
 
     def draw_character(self):
         self.image.fill((0, 0, 0, 0))  # Clear with full transparency
         
-        # Draw only the circle and its border
-        center = (50, 50)
-        radius = 35
+        # Calculate current radius based on state
+        if self.is_clicked:
+            target_radius = self.click_radius
+        elif self.is_hovered:
+            target_radius = self.hover_radius
+        else:
+            target_radius = self.normal_radius
+        
+        # Smoothly interpolate radius
+        self.current_radius += (target_radius - self.current_radius) * 0.3
+        
+        # Draw glow effect when hovered
+        if self.is_hovered and self.count > 0:
+            glow_radius = int(self.current_radius * 1.2)
+            glow_color = (*self.color, 100)  # Semi-transparent glow
+            pygame.draw.circle(self.image, glow_color, (50, 50), glow_radius)
         
         # Create RGBA colors from RGB base colors
-        circle_color = (*ensure_rgb(self.color), 230)  # Add alpha channel
-        border_color = (*ensure_rgb(WHITE), 255)  # Solid white border
-        text_color = ensure_rgb(BLACK)  # Text color in RGB
+        if self.count > 0:
+            circle_color = (*self.color, 230)  # Add alpha channel
+            border_color = (*WHITE, 255)  # Solid white border
+        else:
+            # Gray out if no ingredients left
+            gray_color = (100, 100, 100)
+            circle_color = (*gray_color, 180)
+            border_color = (*gray_color, 200)
         
-        # Draw circle and border
-        pygame.draw.circle(self.image, circle_color, center, radius)
-        pygame.draw.circle(self.image, border_color, center, radius, 2)
+        text_color = BLACK  # Text color in RGB
+        
+        # Draw main circle and border
+        pygame.draw.circle(self.image, circle_color, (50, 50), int(self.current_radius))
+        pygame.draw.circle(self.image, border_color, (50, 50), int(self.current_radius), 2)
         
         # Draw name inside circle
         font = pygame.font.Font(None, 20)
@@ -90,6 +120,15 @@ class IngredientSprite(pygame.sprite.Sprite):
         self.image.blit(count_surf, count_rect)
 
     def update(self):
+        # Update hover state
+        mouse_pos = pygame.mouse.get_pos()
+        was_hovered = self.is_hovered
+        self.is_hovered = self.rect.collidepoint(mouse_pos)
+        
+        # Redraw if hover state changed
+        if was_hovered != self.is_hovered:
+            self.draw_character()
+        
         if self.is_moving:
             dx = self.target_x - self.rect.centerx
             dy = self.target_y - self.rect.centery
@@ -113,5 +152,21 @@ class IngredientSprite(pygame.sprite.Sprite):
             self.bounce_offset = new_offset
 
     def update_count(self, count):
+        """Update the ingredient count and redraw"""
         self.count = count
+        self.draw_character()
+        
+    def handle_click(self):
+        """Handle mouse click on the sprite"""
+        if self.count > 0:
+            self.is_clicked = True
+            self.draw_character()
+            # Reset click state after a short delay
+            pygame.time.set_timer(pygame.USEREVENT, 100)  # 100ms delay
+            return True
+        return False
+        
+    def reset_click(self):
+        """Reset click state"""
+        self.is_clicked = False
         self.draw_character()

@@ -1,5 +1,5 @@
 import pygame
-from config import WIDTH, HEIGHT, BLACK, WHITE
+from config import WIDTH, HEIGHT, BLACK, WHITE, GRAY, DARK_GRAY
 
 def draw_intro_screen(screen):
     screen.fill(BLACK)
@@ -78,3 +78,128 @@ def draw_recipe_book_screen(screen, game):
     
     back_text = font.render("Press B to go back", True, (0, 0, 0))
     screen.blit(back_text, (WIDTH // 2 - back_text.get_width() // 2, HEIGHT - 50))
+
+class VolumeControl:
+    def __init__(self, x, y, width=200):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = 150
+        self.visible = False
+        self.sliders = {
+            'master': {'value': 0.8, 'y_offset': 20, 'label': 'Master Volume'},
+            'mixing': {'value': 0.4, 'y_offset': 50, 'label': 'Mixing Sounds'},
+            'baking': {'value': 0.3, 'y_offset': 80, 'label': 'Baking Sounds'},
+            'effects': {'value': 0.5, 'y_offset': 110, 'label': 'Effects'},
+            'ambient': {'value': 0.1, 'y_offset': 140, 'label': 'Ambient'}
+        }
+        self.active_slider = None
+        self.font = pygame.font.Font(None, 24)
+        
+    def toggle(self):
+        self.visible = not self.visible
+    
+    def handle_mouse_down(self, pos):
+        if not self.visible:
+            return False
+            
+        mouse_x, mouse_y = pos
+        if not (self.x <= mouse_x <= self.x + self.width and
+                self.y <= mouse_y <= self.y + self.height):
+            self.visible = False
+            return False
+        
+        # Check if clicked on a slider
+        for channel, slider in self.sliders.items():
+            slider_y = self.y + slider['y_offset']
+            if slider_y - 5 <= mouse_y <= slider_y + 5:
+                self.active_slider = channel
+                # Update value based on x position
+                value = (mouse_x - self.x) / self.width
+                self.sliders[channel]['value'] = max(0.0, min(1.0, value))
+                return True
+        return True
+    
+    def handle_mouse_up(self):
+        self.active_slider = None
+    
+    def handle_mouse_motion(self, pos):
+        if not self.visible or not self.active_slider:
+            return
+            
+        mouse_x, _ = pos
+        # Update active slider value
+        value = (mouse_x - self.x) / self.width
+        self.sliders[self.active_slider]['value'] = max(0.0, min(1.0, value))
+    
+    def get_volume(self, channel):
+        return self.sliders[channel]['value']
+    
+    def draw(self, screen):
+        if not self.visible:
+            return
+            
+        # Draw background panel
+        panel = pygame.Surface((self.width + 20, self.height + 20), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (*DARK_GRAY, 230), 
+                        (0, 0, self.width + 20, self.height + 20), 
+                        border_radius=10)
+        screen.blit(panel, (self.x - 10, self.y - 10))
+        
+        # Draw title
+        title = self.font.render("Volume Settings", True, WHITE)
+        screen.blit(title, (self.x + self.width//2 - title.get_width()//2, self.y - 5))
+        
+        # Draw each slider
+        for channel, slider in self.sliders.items():
+            # Draw label
+            label = self.font.render(slider['label'], True, WHITE)
+            screen.blit(label, (self.x, self.y + slider['y_offset'] - 15))
+            
+            # Draw slider track
+            pygame.draw.line(screen, GRAY,
+                           (self.x, self.y + slider['y_offset']),
+                           (self.x + self.width, self.y + slider['y_offset']),
+                           2)
+            
+            # Draw slider handle
+            handle_x = self.x + self.width * slider['value']
+            pygame.draw.circle(screen, WHITE,
+                             (int(handle_x), self.y + slider['y_offset']),
+                             6)
+            
+            # Draw percentage
+            percent = f"{int(slider['value'] * 100)}%"
+            percent_text = self.font.render(percent, True, WHITE)
+            screen.blit(percent_text, 
+                       (self.x + self.width + 5, 
+                        self.y + slider['y_offset'] - 8))
+
+# Add volume control to existing Button class
+class Button:
+    def __init__(self, x, y, width, height, text, action=None, color=GRAY, hover_color=DARK_GRAY):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.text = text
+        self.action = action
+        self.color = color
+        self.hover_color = hover_color
+        self.is_hovered = False
+        self.font = pygame.font.Font(None, 36)
+        
+    def draw(self, screen):
+        color = self.hover_color if self.is_hovered else self.color
+        pygame.draw.rect(screen, color, self.rect, border_radius=5)
+        pygame.draw.rect(screen, BLACK, self.rect, 2, border_radius=5)
+        
+        text_surface = self.font.render(self.text, True, BLACK)
+        text_rect = text_surface.get_rect(center=self.rect.center)
+        screen.blit(text_surface, text_rect)
+        
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEMOTION:
+            self.is_hovered = self.rect.collidepoint(event.pos)
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if self.is_hovered and self.action:
+                self.action()
+                return True
+        return False

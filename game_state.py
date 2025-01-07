@@ -67,20 +67,34 @@ class Game:
             # This will be handled in the main game loop
 
     def handle_ingredient_click(self, x, y):
-        if self.animation_manager.is_animating:
+        """Handle clicking on ingredients"""
+        # Only block if we have too many active animations
+        if len(self.animation_manager.animated_ingredients) >= 5:
+            print("Too many active animations, wait for some to complete")
+            self.animation_manager.add_popup_message("Wait for ingredients to settle!", color=(255, 165, 0))
             return None, None, None
 
+        # Convert click position to pygame.Rect for collision detection
+        click_rect = pygame.Rect(x-1, y-1, 2, 2)
+        
         # Check collision with ingredient sprites
-        pos = pygame.mouse.get_pos()
         for sprite in self.ingredient_sprites:
-            if sprite.rect.collidepoint(pos):
+            if sprite.rect.colliderect(click_rect):
                 ing = sprite.name
                 if self.ingredient_counts[ing] > 0:
+                    print(f"Selected ingredient: {ing}")  # Debug print
                     self.current_ingredients.append(ing)
                     self.ingredient_counts[ing] -= 1
                     sprite.update_count(self.ingredient_counts[ing])
+                    
+                    # Return the sprite's center position for animation
                     return ing, sprite.rect.centerx, sprite.rect.centery
+                else:
+                    print(f"Out of {ing}")  # Debug print
+                    self.animation_manager.add_popup_message(f"Out of {ing}!", color=(255, 0, 0))
+                    return None, None, None
 
+        print("No ingredient clicked")  # Debug print
         return None, None, None
 
     def check_for_combinations(self):
