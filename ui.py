@@ -1,5 +1,7 @@
 import pygame
 from config import WIDTH, HEIGHT, BLACK, WHITE, GRAY, DARK_GRAY
+import math
+import random
 
 def draw_intro_screen(screen):
     screen.fill(BLACK)
@@ -211,7 +213,7 @@ class ModernUI:
         self.font_medium = pygame.font.Font(None, 32)
         self.font_small = pygame.font.Font(None, 24)
         
-        # UI Colors
+        # UI Colors - Modern, muted palette
         self.colors = {
             'primary': (60, 80, 135),
             'secondary': (40, 50, 80),
@@ -222,112 +224,224 @@ class ModernUI:
             'panel_light': (50, 60, 80, 200),
             'success': (100, 200, 100),
             'error': (200, 80, 80),
-            'warning': (200, 150, 50)
+            'warning': (200, 150, 50),
+            'glass': (255, 255, 255, 40),
+            'glass_dark': (20, 25, 35, 180)
         }
         
         # UI Animation states
         self.animations = {
             'menu_offset': 0,
             'panel_alpha': 0,
-            'hover_scale': 1.0
+            'hover_scale': 1.0,
+            'rotation': 0
         }
+        
+        # Initialize 3D renderer
+        from render_3d import IsometricRenderer
+        self.renderer = IsometricRenderer()
+        
+        # Panel positions and dimensions
+        self.recipe_panel_rect = pygame.Rect(WIDTH - 280, 20, 260, HEIGHT - 40)
+        self.inventory_panel_rect = pygame.Rect(20, 20, 260, HEIGHT - 40)
+        
+        # Initialize floating particles
+        self.particles = []
+        for _ in range(20):
+            self.particles.append({
+                'position': (
+                    random.uniform(-100, 100),
+                    random.uniform(-100, 100),
+                    random.uniform(0, 50)
+                ),
+                'color': (255, 255, 255),
+                'size': random.uniform(2, 4),
+                'alpha': random.randint(50, 150),
+                'speed': random.uniform(0.5, 1.5)
+            })
     
-    def draw_panel(self, screen, rect, color=None, border_radius=10):
-        """Draw a modern semi-transparent panel"""
-        if color is None:
-            color = self.colors['panel']
-        
-        panel = pygame.Surface(rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(panel, color, panel.get_rect(), border_radius=border_radius)
-        
-        # Add subtle gradient
-        gradient = pygame.Surface(rect.size, pygame.SRCALPHA)
-        for i in range(rect.height):
-            alpha = int(10 * (1 - i/rect.height))
-            pygame.draw.line(gradient, (255, 255, 255, alpha), (0, i), (rect.width, i))
-        panel.blit(gradient, (0, 0))
-        
-        screen.blit(panel, rect)
+    def update_particles(self, dt):
+        """Update particle positions and properties"""
+        for particle in self.particles:
+            # Update z position with floating motion
+            particle['position'] = (
+                particle['position'][0],
+                particle['position'][1],
+                particle['position'][2] + math.sin(pygame.time.get_ticks() / 1000) * particle['speed']
+            )
+            
+            # Reset particles that float too high
+            if particle['position'][2] > 100:
+                particle['position'] = (
+                    random.uniform(-100, 100),
+                    random.uniform(-100, 100),
+                    0
+                )
     
-    def draw_button(self, screen, rect, text, color=None, hover=False, active=False):
-        """Draw a modern button with hover and click effects"""
-        if color is None:
-            color = self.colors['secondary']
+    def draw_game_ui(self, screen, game):
+        """Draw the main game UI with 3D effects"""
+        # Clear screen with a dark gradient background
+        self.draw_background(screen)
         
-        # Adjust color based on state
-        if active:
-            color = tuple(min(c + 30, 255) for c in color[:3]) + (color[3],) if len(color) > 3 else color
-        elif hover:
-            color = tuple(min(c + 15, 255) for c in color[:3]) + (color[3],) if len(color) > 3 else color
+        # Update and draw particles
+        self.update_particles(1/60)  # Assuming 60 FPS
+        self.renderer.draw_particle_effects(screen, self.particles)
         
-        # Draw button background
-        self.draw_panel(screen, rect, color)
+        # Draw side panels with glass effect
+        recipe_panel = self.renderer.create_glass_panel(
+            self.recipe_panel_rect.width,
+            self.recipe_panel_rect.height,
+            self.colors['glass_dark']
+        )
+        screen.blit(recipe_panel, self.recipe_panel_rect)
         
-        # Draw text
-        text_surface = self.font_medium.render(text, True, self.colors['text'])
-        text_rect = text_surface.get_rect(center=rect.center)
-        screen.blit(text_surface, text_rect)
+        inventory_panel = self.renderer.create_glass_panel(
+            self.inventory_panel_rect.width,
+            self.inventory_panel_rect.height,
+            self.colors['glass_dark']
+        )
+        screen.blit(inventory_panel, self.inventory_panel_rect)
+        
+        # Draw 3D mixing bowl
+        self.renderer.draw_mixing_bowl(screen, len(game.current_ingredients) / 10)
+        
+        # Draw floating ingredients
+        self.draw_ingredient_grid(screen, game)
+        
+        # Draw recipe list with modern styling
+        self.draw_recipe_panel(screen, game)
+        
+        # Draw top bar with game info
+        self.draw_top_bar(screen, game)
+    
+    def draw_background(self, screen):
+        """Draw a modern gradient background"""
+        for i in range(HEIGHT):
+            progress = i / HEIGHT
+            color = [
+                int(20 + 10 * (1 - progress)),  # Dark blue base
+                int(25 + 15 * (1 - progress)),
+                int(35 + 20 * (1 - progress))
+            ]
+            pygame.draw.line(screen, color, (0, i), (WIDTH, i))
     
     def draw_ingredient_grid(self, screen, game):
-        """Draw ingredients in a modern grid layout"""
-        grid_rect = pygame.Rect(50, 150, WIDTH - 300, HEIGHT - 250)
-        self.draw_panel(screen, grid_rect)
+        """Draw ingredients in a modern floating grid layout"""
+        grid_start_x = self.inventory_panel_rect.x + 20
+        grid_start_y = self.inventory_panel_rect.y + 60
         
-        # Calculate grid dimensions
-        items_per_row = 4
-        item_size = min((grid_rect.width - 60) // items_per_row, 120)
-        spacing = 20
+        items_per_row = 2
+        spacing_x = 120
+        spacing_y = 140
+        
+        # Draw "Ingredients" title
+        title = self.font_medium.render("Ingredients", True, self.colors['text'])
+        screen.blit(title, (grid_start_x, grid_start_y - 40))
         
         for i, sprite in enumerate(game.ingredient_sprites):
             row = i // items_per_row
             col = i % items_per_row
-            x = grid_rect.left + spacing + col * (item_size + spacing)
-            y = grid_rect.top + spacing + row * (item_size + spacing)
             
-            sprite.rect.topleft = (x, y)
-            sprite.draw_modern(screen, self)
+            x = grid_start_x + col * spacing_x
+            y = grid_start_y + row * spacing_y
+            
+            # Calculate 3D position
+            pos = (x - WIDTH/2, y - HEIGHT/2, 0)
+            
+            # Add hover effect
+            if sprite.is_hovered:
+                hover_height = 20
+            else:
+                hover_height = 0
+            
+            # Draw 3D ingredient
+            self.renderer.draw_floating_ingredient(
+                screen,
+                pos,
+                sprite.color,
+                sprite.current_radius,
+                hover_height
+            )
+            
+            # Draw ingredient name and count
+            name_surface = self.font_small.render(sprite.name, True, self.colors['text'])
+            count_surface = self.font_small.render(f"x{sprite.count}", True, self.colors['text'])
+            
+            name_pos = (x - name_surface.get_width()//2, y + 40)
+            count_pos = (x - count_surface.get_width()//2, y + 60)
+            
+            screen.blit(name_surface, name_pos)
+            screen.blit(count_surface, count_pos)
     
     def draw_recipe_panel(self, screen, game):
         """Draw recipe panel with modern styling"""
-        panel_rect = pygame.Rect(WIDTH - 250, 50, 200, HEIGHT - 100)
-        self.draw_panel(screen, panel_rect)
+        panel_x = self.recipe_panel_rect.x + 20
+        panel_y = self.recipe_panel_rect.y + 60
         
+        # Draw "Recipes" title
         title = self.font_medium.render("Recipes", True, self.colors['text'])
-        screen.blit(title, (panel_rect.left + 20, panel_rect.top + 20))
+        screen.blit(title, (panel_x, panel_y - 40))
         
-        y = panel_rect.top + 60
-        for recipe in game.discovered_recipes:
-            recipe_rect = pygame.Rect(panel_rect.left + 10, y, 180, 40)
-            self.draw_button(screen, recipe_rect, recipe, hover=False)
-            y += 50
-    
-    def draw_bowl_contents(self, screen, game):
-        """Draw bowl contents with modern styling"""
-        if not game.current_ingredients:
-            return
+        # Draw recipe list
+        for i, recipe in enumerate(game.discovered_recipes):
+            y_offset = i * 80
             
-        panel_rect = pygame.Rect(50, 50, 300, 80)
-        self.draw_panel(screen, panel_rect)
-        
-        title = self.font_small.render("Bowl Contents", True, self.colors['text'])
-        screen.blit(title, (panel_rect.left + 10, panel_rect.top + 10))
-        
-        contents = ", ".join(game.current_ingredients)
-        content_text = self.font_small.render(contents, True, self.colors['text'])
-        screen.blit(content_text, (panel_rect.left + 10, panel_rect.top + 40))
+            # Create recipe card
+            card_rect = pygame.Rect(panel_x, panel_y + y_offset, 220, 70)
+            card_surface = self.renderer.create_glass_panel(
+                card_rect.width,
+                card_rect.height,
+                self.colors['glass']
+            )
+            
+            # Draw recipe name
+            recipe_text = self.font_small.render(recipe, True, self.colors['text'])
+            text_pos = (10, 10)
+            card_surface.blit(recipe_text, text_pos)
+            
+            # Draw recipe ingredients
+            if recipe in game.recipes:
+                ingredients = ", ".join(game.recipes[recipe][:3])
+                if len(game.recipes[recipe]) > 3:
+                    ingredients += "..."
+                ing_text = self.font_small.render(ingredients, True, self.colors['text'])
+                ing_pos = (10, 35)
+                card_surface.blit(ing_text, ing_pos)
+            
+            screen.blit(card_surface, card_rect)
     
-    def draw_game_ui(self, screen, game):
-        """Draw the main game UI"""
-        # Draw background panel
-        self.draw_panel(screen, pygame.Rect(0, 0, WIDTH, HEIGHT))
+    def draw_top_bar(self, screen, game):
+        """Draw top bar with game information"""
+        # Create glass panel for top bar
+        top_bar = self.renderer.create_glass_panel(WIDTH, 50, self.colors['glass_dark'])
         
-        # Draw main UI elements
-        self.draw_ingredient_grid(screen, game)
-        self.draw_recipe_panel(screen, game)
-        self.draw_bowl_contents(screen, game)
-        
-        # Draw bakecoin display
-        coin_rect = pygame.Rect(WIDTH//2 - 100, 10, 200, 40)
-        self.draw_panel(screen, coin_rect, self.colors['panel_light'])
+        # Draw bakecoin count
         coin_text = self.font_medium.render(f"🪙 {game.bakecoin}", True, self.colors['accent'])
-        screen.blit(coin_text, coin_text.get_rect(center=coin_rect.center))
+        coin_pos = (WIDTH//2 - coin_text.get_width()//2, 10)
+        top_bar.blit(coin_text, coin_pos)
+        
+        screen.blit(top_bar, (0, 0))
+        
+    def draw_button(self, screen, rect, text, color=None, hover=False, active=False):
+        """Draw a modern button with 3D effects"""
+        if color is None:
+            color = self.colors['secondary']
+            
+        # Create glass panel for button
+        button_surface = self.renderer.create_glass_panel(
+            rect.width,
+            rect.height,
+            color if not hover else (*color[:3], color[3] + 40)
+        )
+        
+        # Draw text
+        text_surface = self.font_medium.render(text, True, self.colors['text'])
+        text_rect = text_surface.get_rect(center=(rect.width//2, rect.height//2))
+        button_surface.blit(text_surface, text_rect)
+        
+        # Add hover effect
+        if hover:
+            pygame.draw.rect(button_surface, (*self.colors['accent'], 30),
+                           button_surface.get_rect(), border_radius=10)
+        
+        screen.blit(button_surface, rect)
