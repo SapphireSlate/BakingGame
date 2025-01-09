@@ -28,145 +28,135 @@ class IngredientSprite(pygame.sprite.Sprite):
     def __init__(self, name, x, y, count):
         super().__init__()
         self.name = name
-        # Ensure color is in RGB format when storing
         self.color = ensure_rgb(INGREDIENT_COLORS.get(name, (200, 200, 200)))
         self.image = pygame.Surface((100, 100), pygame.SRCALPHA)
-        self.image.fill((0, 0, 0, 0))  # Ensure full transparency
         self.rect = self.image.get_rect(center=(x, y))
         self.count = count
         
-        # Add missing movement attributes
-        self.is_moving = False
-        self.target_x = x
-        self.target_y = y
-        self.speed = 5
-        self.bounce_time = 0
-        self.bounce_speed = 0.05
-        self.bounce_offset = 0
+        # 3D effect parameters
+        self.depth = 20  # Depth of 3D effect
+        self.angle = 0  # Current rotation angle
+        self.target_angle = 0  # Target rotation angle
+        self.rotation_speed = 0.1  # Speed of rotation
+        self.perspective = 800  # Perspective distance
         
-        # Add hover and click effects
+        # Animation parameters
+        self.hover_height = 0
+        self.target_hover_height = 0
+        self.hover_speed = 0.2
+        self.bounce_offset = 0
+        self.bounce_speed = 0.05
+        self.scale = 1.0
+        self.target_scale = 1.0
+        
+        # Interaction states
         self.is_hovered = False
         self.is_clicked = False
-        self.hover_scale = 1.1
-        self.click_scale = 0.9
-        self.normal_radius = 35
-        self.hover_radius = int(self.normal_radius * self.hover_scale)
-        self.click_radius = int(self.normal_radius * self.click_scale)
-        self.current_radius = self.normal_radius
+        self.is_selected = False
+    
+    def draw_modern(self, screen, ui):
+        """Draw ingredient with modern 3D effects"""
+        # Calculate size based on scale
+        size = int(80 * self.scale)
         
-        self.draw_character()
-
-    def draw_character(self):
-        self.image.fill((0, 0, 0, 0))  # Clear with full transparency
+        # Create surface for ingredient
+        surface = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
         
-        # Calculate current radius based on state
-        if self.is_clicked:
-            target_radius = self.click_radius
-        elif self.is_hovered:
-            target_radius = self.hover_radius
-        else:
-            target_radius = self.normal_radius
+        # Calculate 3D transformations
+        cos_a = math.cos(self.angle)
+        sin_a = math.sin(self.angle)
         
-        # Smoothly interpolate radius
-        self.current_radius += (target_radius - self.current_radius) * 0.3
+        # Draw 3D cylinder for ingredient
+        for i in range(self.depth):
+            # Calculate ellipse dimensions based on perspective
+            squeeze = 1 - (i / self.depth) * 0.3
+            width = size * squeeze
+            height = size * squeeze * cos_a
+            
+            # Calculate position with perspective
+            x = size + sin_a * i * 0.5
+            y = size - i + self.hover_height
+            
+            # Calculate color with depth shading
+            shade = 1 - (i / self.depth) * 0.4
+            color = tuple(int(c * shade) for c in self.color)
+            
+            # Draw ellipse
+            pygame.draw.ellipse(surface, (*color, 220), 
+                              (x - width/2, y - height/2, width, height))
         
-        # Draw glow effect when hovered
-        if self.is_hovered and self.count > 0:
-            glow_radius = int(self.current_radius * 1.2)
-            glow_color = (*self.color, 100)  # Semi-transparent glow
-            pygame.draw.circle(self.image, glow_color, (50, 50), glow_radius)
+        # Draw top circle
+        pygame.draw.ellipse(surface, (*self.color, 255),
+                          (size - size/2, 
+                           size - self.depth - size/2 + self.hover_height,
+                           size, size * cos_a))
         
-        # Create RGBA colors from RGB base colors
+        # Add highlight
+        highlight = pygame.Surface((size, size), pygame.SRCALPHA)
+        pygame.draw.ellipse(highlight, (255, 255, 255, 40),
+                          (0, 0, size, size * cos_a))
+        surface.blit(highlight, (size - size/2,
+                               size - self.depth - size/2 + self.hover_height))
+        
+        # Draw ingredient name
+        if self.is_hovered or self.is_selected:
+            name_surface = ui.font_small.render(self.name, True, ui.colors['text'])
+            name_rect = name_surface.get_rect(center=(size, size * 2 - 20))
+            surface.blit(name_surface, name_rect)
+        
+        # Draw count
         if self.count > 0:
-            circle_color = (*self.color, 230)  # Add alpha channel
-            border_color = (*WHITE, 255)  # Solid white border
-        else:
-            # Gray out if no ingredients left
-            gray_color = (100, 100, 100)
-            circle_color = (*gray_color, 180)
-            border_color = (*gray_color, 200)
+            count_surface = ui.font_small.render(f"x{self.count}", True, ui.colors['text'])
+            count_rect = count_surface.get_rect(center=(size * 2 - 20, 20))
+            surface.blit(count_surface, count_rect)
         
-        text_color = BLACK  # Text color in RGB
+        # Update the sprite's image
+        self.image = surface
         
-        # Draw main circle and border
-        pygame.draw.circle(self.image, circle_color, (50, 50), int(self.current_radius))
-        pygame.draw.circle(self.image, border_color, (50, 50), int(self.current_radius), 2)
-        
-        # Draw name inside circle
-        font = pygame.font.Font(None, 20)
-        words = self.name.split()
-        if len(words) > 1:
-            # Split long names into two lines
-            name_line1 = " ".join(words[:len(words)//2])
-            name_line2 = " ".join(words[len(words)//2:])
-            
-            text1 = font.render(name_line1, True, text_color)
-            text2 = font.render(name_line2, True, text_color)
-            
-            text_rect1 = text1.get_rect(center=(50, 42))
-            text_rect2 = text2.get_rect(center=(50, 58))
-            
-            self.image.blit(text1, text_rect1)
-            self.image.blit(text2, text_rect2)
-        else:
-            text = font.render(self.name, True, text_color)
-            text_rect = text.get_rect(center=(50, 45))
-            self.image.blit(text, text_rect)
-        
-        # Draw count at bottom
-        count_text = f"x{self.count}"
-        count_surf = font.render(count_text, True, text_color)
-        count_rect = count_surf.get_rect(center=(50, 65))
-        self.image.blit(count_surf, count_rect)
-
+        # Draw to screen
+        screen.blit(self.image, self.rect)
+    
     def update(self):
+        # Update 3D rotation
+        if self.angle != self.target_angle:
+            diff = self.target_angle - self.angle
+            self.angle += diff * self.rotation_speed
+        
+        # Update hover animation
+        if self.hover_height != self.target_hover_height:
+            diff = self.target_hover_height - self.hover_height
+            self.hover_height += diff * self.hover_speed
+        
+        # Update scale animation
+        if self.scale != self.target_scale:
+            diff = self.target_scale - self.scale
+            self.scale += diff * 0.2
+        
         # Update hover state
         mouse_pos = pygame.mouse.get_pos()
         was_hovered = self.is_hovered
         self.is_hovered = self.rect.collidepoint(mouse_pos)
         
-        # Redraw if hover state changed
-        if was_hovered != self.is_hovered:
-            self.draw_character()
-        
-        if self.is_moving:
-            dx = self.target_x - self.rect.centerx
-            dy = self.target_y - self.rect.centery
-            distance = (dx ** 2 + dy ** 2) ** 0.5
-            
-            if distance > self.speed:
-                move_x = (dx / distance) * self.speed
-                move_y = (dy / distance) * self.speed
-                self.rect.x += move_x
-                self.rect.y += move_y
-            else:
-                self.rect.centerx = self.target_x
-                self.rect.centery = self.target_y
-                self.is_moving = False
-        else:
-            # Gentle bounce when not moving
-            self.bounce_time += self.bounce_speed
-            new_offset = math.sin(self.bounce_time) * 1.5
-            delta = new_offset - self.bounce_offset
-            self.rect.y += delta
-            self.bounce_offset = new_offset
-
-    def update_count(self, count):
-        """Update the ingredient count and redraw"""
-        self.count = count
-        self.draw_character()
-        
+        # Update hover effects
+        if self.is_hovered and not was_hovered:
+            self.target_hover_height = 10
+            self.target_scale = 1.1
+            self.target_angle = math.pi * 0.1
+        elif not self.is_hovered and was_hovered:
+            self.target_hover_height = 0
+            self.target_scale = 1.0
+            self.target_angle = 0
+    
     def handle_click(self):
         """Handle mouse click on the sprite"""
         if self.count > 0:
             self.is_clicked = True
-            self.draw_character()
-            # Reset click state after a short delay
-            pygame.time.set_timer(pygame.USEREVENT, 100)  # 100ms delay
+            self.target_scale = 0.9
+            pygame.time.set_timer(pygame.USEREVENT, 100)
             return True
         return False
-        
+    
     def reset_click(self):
         """Reset click state"""
         self.is_clicked = False
-        self.draw_character()
+        self.target_scale = 1.0 if not self.is_hovered else 1.1

@@ -203,3 +203,131 @@ class Button:
                 self.action()
                 return True
         return False
+
+class ModernUI:
+    def __init__(self):
+        self.font_title = pygame.font.Font(None, 64)
+        self.font_large = pygame.font.Font(None, 48)
+        self.font_medium = pygame.font.Font(None, 32)
+        self.font_small = pygame.font.Font(None, 24)
+        
+        # UI Colors
+        self.colors = {
+            'primary': (60, 80, 135),
+            'secondary': (40, 50, 80),
+            'accent': (255, 180, 50),
+            'text': (255, 255, 255),
+            'text_dark': (20, 20, 30),
+            'panel': (30, 35, 50, 220),
+            'panel_light': (50, 60, 80, 200),
+            'success': (100, 200, 100),
+            'error': (200, 80, 80),
+            'warning': (200, 150, 50)
+        }
+        
+        # UI Animation states
+        self.animations = {
+            'menu_offset': 0,
+            'panel_alpha': 0,
+            'hover_scale': 1.0
+        }
+    
+    def draw_panel(self, screen, rect, color=None, border_radius=10):
+        """Draw a modern semi-transparent panel"""
+        if color is None:
+            color = self.colors['panel']
+        
+        panel = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(panel, color, panel.get_rect(), border_radius=border_radius)
+        
+        # Add subtle gradient
+        gradient = pygame.Surface(rect.size, pygame.SRCALPHA)
+        for i in range(rect.height):
+            alpha = int(10 * (1 - i/rect.height))
+            pygame.draw.line(gradient, (255, 255, 255, alpha), (0, i), (rect.width, i))
+        panel.blit(gradient, (0, 0))
+        
+        screen.blit(panel, rect)
+    
+    def draw_button(self, screen, rect, text, color=None, hover=False, active=False):
+        """Draw a modern button with hover and click effects"""
+        if color is None:
+            color = self.colors['secondary']
+        
+        # Adjust color based on state
+        if active:
+            color = tuple(min(c + 30, 255) for c in color[:3]) + (color[3],) if len(color) > 3 else color
+        elif hover:
+            color = tuple(min(c + 15, 255) for c in color[:3]) + (color[3],) if len(color) > 3 else color
+        
+        # Draw button background
+        self.draw_panel(screen, rect, color)
+        
+        # Draw text
+        text_surface = self.font_medium.render(text, True, self.colors['text'])
+        text_rect = text_surface.get_rect(center=rect.center)
+        screen.blit(text_surface, text_rect)
+    
+    def draw_ingredient_grid(self, screen, game):
+        """Draw ingredients in a modern grid layout"""
+        grid_rect = pygame.Rect(50, 150, WIDTH - 300, HEIGHT - 250)
+        self.draw_panel(screen, grid_rect)
+        
+        # Calculate grid dimensions
+        items_per_row = 4
+        item_size = min((grid_rect.width - 60) // items_per_row, 120)
+        spacing = 20
+        
+        for i, sprite in enumerate(game.ingredient_sprites):
+            row = i // items_per_row
+            col = i % items_per_row
+            x = grid_rect.left + spacing + col * (item_size + spacing)
+            y = grid_rect.top + spacing + row * (item_size + spacing)
+            
+            sprite.rect.topleft = (x, y)
+            sprite.draw_modern(screen, self)
+    
+    def draw_recipe_panel(self, screen, game):
+        """Draw recipe panel with modern styling"""
+        panel_rect = pygame.Rect(WIDTH - 250, 50, 200, HEIGHT - 100)
+        self.draw_panel(screen, panel_rect)
+        
+        title = self.font_medium.render("Recipes", True, self.colors['text'])
+        screen.blit(title, (panel_rect.left + 20, panel_rect.top + 20))
+        
+        y = panel_rect.top + 60
+        for recipe in game.discovered_recipes:
+            recipe_rect = pygame.Rect(panel_rect.left + 10, y, 180, 40)
+            self.draw_button(screen, recipe_rect, recipe, hover=False)
+            y += 50
+    
+    def draw_bowl_contents(self, screen, game):
+        """Draw bowl contents with modern styling"""
+        if not game.current_ingredients:
+            return
+            
+        panel_rect = pygame.Rect(50, 50, 300, 80)
+        self.draw_panel(screen, panel_rect)
+        
+        title = self.font_small.render("Bowl Contents", True, self.colors['text'])
+        screen.blit(title, (panel_rect.left + 10, panel_rect.top + 10))
+        
+        contents = ", ".join(game.current_ingredients)
+        content_text = self.font_small.render(contents, True, self.colors['text'])
+        screen.blit(content_text, (panel_rect.left + 10, panel_rect.top + 40))
+    
+    def draw_game_ui(self, screen, game):
+        """Draw the main game UI"""
+        # Draw background panel
+        self.draw_panel(screen, pygame.Rect(0, 0, WIDTH, HEIGHT))
+        
+        # Draw main UI elements
+        self.draw_ingredient_grid(screen, game)
+        self.draw_recipe_panel(screen, game)
+        self.draw_bowl_contents(screen, game)
+        
+        # Draw bakecoin display
+        coin_rect = pygame.Rect(WIDTH//2 - 100, 10, 200, 40)
+        self.draw_panel(screen, coin_rect, self.colors['panel_light'])
+        coin_text = self.font_medium.render(f"🪙 {game.bakecoin}", True, self.colors['accent'])
+        screen.blit(coin_text, coin_text.get_rect(center=coin_rect.center))

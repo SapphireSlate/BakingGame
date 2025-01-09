@@ -64,22 +64,49 @@ def handle_mouse_click(event, game, animation_manager):
         if (button_x <= x <= button_x + button_width and 
             button_y <= y <= button_y + button_height):
             if game.replenish_ingredients():
-                print("Ingredients replenished!")  # Debug print
+                animation_manager.add_popup_message("Ingredients replenished!", color=(0, 255, 0))
+            else:
+                animation_manager.add_popup_message("Not enough Bakecoin!", color=(255, 0, 0))
+            return
+        
+        # Handle upgrade purchases
+        if y >= HEIGHT - 50:
+            if game.purchase_upgrade(event.pos):
+                animation_manager.add_popup_message("Upgrade purchased!", color=(0, 255, 0))
             return
         
         # Handle ingredient clicks
-        if y >= HEIGHT - 50:
-            if game.purchase_upgrade(event.pos):
-                print("Upgrade purchased!")  # Debug print
-        else:
-            # Check for sprite clicks first
-            for sprite in game.ingredient_sprites:
-                if sprite.rect.collidepoint(event.pos):
-                    if sprite.handle_click():  # This will handle visual feedback
+        clicked_ingredient = False
+        for sprite in game.ingredient_sprites:
+            if sprite.rect.collidepoint(event.pos):
+                if sprite.count > 0:  # Only handle click if we have ingredients left
+                    if not animation_manager.is_animating:  # Check if we can add more animations
+                        sprite.handle_click()  # Handle visual feedback
                         ing, start_x, start_y = game.handle_ingredient_click(x, y)
                         if ing:
                             animation_manager.add_ingredient_animation(ing, start_x, start_y)
-                    break  # Exit after handling first clicked sprite
+                    else:
+                        animation_manager.add_popup_message("Wait for ingredients to settle!", color=(255, 165, 0))
+                else:
+                    animation_manager.add_popup_message(f"Out of {sprite.name}!", color=(255, 0, 0))
+                clicked_ingredient = True
+                break
+        
+        if not clicked_ingredient:
+            # Handle clicks on the bowl or other game areas
+            bowl_x = WIDTH // 2
+            bowl_y = HEIGHT // 2
+            bowl_radius = 80  # Approximate bowl click area
+            
+            # Check if click is within bowl area
+            dx = x - bowl_x
+            dy = y - bowl_y
+            if (dx * dx + dy * dy) <= bowl_radius * bowl_radius:
+                if len(game.current_ingredients) > 0:
+                    game.baking = True
+                    animation_manager.start_baking()
+                else:
+                    animation_manager.add_popup_message("Add ingredients first!", color=(255, 165, 0))
 
 def main():
     # Initialize Pygame with error handling

@@ -128,6 +128,7 @@ class Game:
         self.all_sprites.update()
 
     def handle_baking_process(self):
+        """Process baking attempt and return result message and reward/penalty"""
         # Don't process baking if animation is in progress
         if self.animation_manager.is_animating:
             return None, 0  # Return early if animating
@@ -135,13 +136,20 @@ class Game:
         if not self.current_ingredients:
             return None, 0
 
+        # Debug print current ingredients
+        print(f"Current ingredients: {sorted(self.current_ingredients)}")
+
         # Check if the current ingredients match any recipe
-        for recipe, ingredients in self.recipes.items():
+        for recipe, required_ingredients in self.recipes.items():
             # Sort both lists to ensure consistent comparison
             current_sorted = sorted(self.current_ingredients)
-            recipe_sorted = sorted(ingredients)
+            recipe_sorted = sorted(required_ingredients)
             
-            if current_sorted == recipe_sorted:
+            # Debug print recipe comparison
+            print(f"Comparing with {recipe}: {recipe_sorted}")
+            
+            # Check if all required ingredients are present
+            if set(current_sorted) == set(recipe_sorted):
                 base_reward = 10
                 if "Quality Ingredients" in self.active_upgrades:
                     base_reward += 5  # Extra reward for quality ingredients

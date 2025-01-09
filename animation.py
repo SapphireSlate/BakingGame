@@ -79,6 +79,10 @@ class PopupText:
         text_rect = text_surface.get_rect(center=(self.x, self.y))
         screen.blit(text_surface, text_rect)
 
+    def is_finished(self):
+        """Check if the popup text has finished displaying"""
+        return self.alpha <= 0
+
 class AnimationManager:
     def __init__(self):
         self.shake_duration = 0
@@ -96,6 +100,8 @@ class AnimationManager:
         self.max_ingredient_volume = 1000  # Maximum volume the bowl can hold
         self.current_bowl_level = 0  # Current fill level (0 to 1)
         self.max_concurrent_animations = 5  # Maximum number of concurrent animations
+        self.disaster_effects = []  # List to store disaster effects
+        self.disaster_duration = 3.0  # Duration of disaster effects in seconds
 
     def reset_bowl(self):
         """Reset the bowl state"""
@@ -167,10 +173,17 @@ class AnimationManager:
 
     def update_mixing_layers(self, settled_ingredient):
         """Update mixing layers when an ingredient settles"""
+        # Create a new layer if it doesn't exist
+        layer_exists = False
         for layer in self.mixing_layers:
             if layer.ingredient == settled_ingredient.ingredient:
                 layer.y_offset = self.get_layer_height()
+                layer_exists = True
                 break
+        
+        if not layer_exists:
+            new_layer = MixingLayer(settled_ingredient.ingredient, self.get_layer_height())
+            self.mixing_layers.append(new_layer)
 
     def get_layer_height(self):
         """Calculate the height for new layers based on current bowl level"""
@@ -341,6 +354,46 @@ class AnimationManager:
         for msg in self.popup_messages:
             msg.draw(screen)
 
+    def trigger_disaster_animation(self, disaster_type, game):
+        """Start a disaster animation"""
+        if disaster_type == "Oven malfunction":
+            self.shake_duration = 60  # 1 second at 60 FPS
+            self.shake_intensity = 5
+            self.add_popup_message("Oven malfunction!", color=(255, 0, 0))
+            if self.is_baking:
+                self.stop_baking()
+        
+        elif disaster_type == "Ingredient spill":
+            # Add spill particles
+            for _ in range(10):
+                self.disaster_effects.append({
+                    'type': 'spill',
+                    'x': WIDTH//2 + random.randint(-50, 50),
+                    'y': HEIGHT//2,
+                    'dx': random.uniform(-2, 2),
+                    'dy': random.uniform(-1, 3),
+                    'color': GRAY,
+                    'life': 1.0
+                })
+            self.add_popup_message("Ingredients spilled!", color=(255, 0, 0))
+        
+        elif disaster_type == "Power outage":
+            self.disaster_effects.append({
+                'type': 'blackout',
+                'alpha': 0,
+                'target_alpha': 180,
+                'duration': self.disaster_duration
+            })
+            self.add_popup_message("Power outage!", color=(255, 0, 0))
+            if self.is_baking:
+                self.stop_baking()
+
+    def clear_disaster_animations(self):
+        """Clear all disaster animations"""
+        self.disaster_effects.clear()
+        self.shake_duration = 0
+        self.shake_intensity = 0
+
 def safe_color_mix(color1, color2):
     """Safely mix two colors with error handling using Mixbox"""
     try:
@@ -349,51 +402,54 @@ def safe_color_mix(color1, color2):
         c2 = ensure_rgb(color2)
         
         # Convert colors from 0-255 range to 0-1 range for Mixbox
-        c1_norm = tuple(c/255 for c in c1)
-        c2_norm = tuple(c/255 for c in c2)
+        c1_norm = [c/255 for c in c1]
+        c2_norm = [c/255 for c in c2]
         
         # Mix colors using Mixbox's pigment-based mixing
-        mixed_norm = mixbox.lerp(c1_norm, c2_norm, 0.5)
+        mixed = mixbox.mixLab(c1_norm, c2_norm)
         
-        # Convert back to 0-255 range
-        mixed = tuple(int(c * 255) for c in mixed_norm)
-        
-        # Ensure result is valid RGB
-        return ensure_rgb(mixed)
+        # Convert back to 0-255 range and ensure minimum brightness
+        mixed_rgb = tuple(max(30, int(c * 255)) for c in mixed)
+        return mixed_rgb
     except Exception as e:
-        print(f"Warning: Color mixing fallback for {color1} and {color2}: {e}")
         # Fallback to simple averaging if Mixbox fails
         return tuple(max(30, (c1 + c2) // 2) for c1, c2 in zip(ensure_rgb(color1), ensure_rgb(color2)))
 
 def mix_colors(color1, color2, ratio=0.5):
     """Mix colors using Mixbox's realistic pigment mixing"""
+    # Cache for mixed colors to avoid recalculating
+    cache_key = (color1, color2, ratio)
+    if hasattr(mix_colors, 'cache') and cache_key in mix_colors.cache:
+        return mix_colors.cache[cache_key]
+    
     # Ensure we're only using RGB components, not alpha
     rgb1 = color1[:3] if len(color1) > 3 else color1
     rgb2 = color2[:3] if len(color2) > 3 else color2
     
     try:
         # Convert to 0-1 range for Mixbox
-        c1_norm = tuple(c/255 for c in rgb1)
-        c2_norm = tuple(c/255 for c in rgb2)
+        c1_norm = [c/255 for c in rgb1]
+        c2_norm = [c/255 for c in rgb2]
         
-        # Mix using Mixbox lerp
-        mixed_norm = mixbox.lerp(c1_norm, c2_norm, ratio)
+        # Mix using Mixbox
+        mixed = mixbox.mixLab(c1_norm, c2_norm)
         
-        # Convert back to 0-255 range
-        mixed_rgb = tuple(int(c * 255) for c in mixed_norm)
+        # Convert back to 0-255 range and ensure minimum brightness
+        mixed_rgb = tuple(max(30, int(c * 255)) for c in mixed)
         
-        # Ensure some minimal brightness
-        min_value = 30
-        mixed_rgb = tuple(max(min_value, c) for c in mixed_rgb)
+        # Cache the result
+        if not hasattr(mix_colors, 'cache'):
+            mix_colors.cache = {}
+        mix_colors.cache[cache_key] = mixed_rgb
         
         return mixed_rgb
     except Exception as e:
-        print(f"Warning: Color mixing fallback: {e}")
         # Fallback to simple linear interpolation
-        return tuple(
+        mixed_rgb = tuple(
             max(30, int(c1 * (1 - ratio) + c2 * ratio))
             for c1, c2 in zip(rgb1, rgb2)
         )
+        return mixed_rgb
 
 def ensure_rgb(color):
     """Ensure color is in RGB format (3 components)"""
@@ -670,156 +726,69 @@ class AnimatedIngredient:
         self.y = start_y
         self.target_x = WIDTH // 2
         self.target_y = target_y
-        self.dx = 0
-        self.dy = 0
-        self.speed = random.uniform(5, 8)
+        self.speed = random.uniform(8, 12)  # Slightly faster movement
         self.size = random.randint(15, 20)
         self.color = INGREDIENT_COLORS.get(ingredient, (200, 200, 200))
         self.alpha = 255
-        self.fade_speed = 5
         self.particles = []
         self.done = False
-        self.settled = False
         self.type = INGREDIENT_TYPES.get(ingredient, "dry")
-        self.gravity = 0.5 if self.type == "dry" else 0.3
-        self.bounce_damping = 0.5
-        self.settling_speed = 0.2 if self.type == "liquid" else 0.1
-        self.max_bounce_height = 20
-        self.min_movement_threshold = 0.1
+        self.last_particle_time = 0
+        self.particle_interval = 0.1  # Seconds between particle spawns
 
     def update(self, current_bowl_level):
         """Update the ingredient animation"""
         if self.done:
             return True
 
-        if not self.settled:
-            # Calculate direction to target
-            dx = self.target_x - self.x
-            dy = self.target_y - self.y
-            distance = math.sqrt(dx * dx + dy * dy)
-            
-            if distance < self.speed:
-                self.settled = True
-                self.dx = 0
-                self.dy = 0
-            else:
-                # Apply gravity during initial movement
-                self.dy += self.gravity * 0.5
-                
-                # Calculate movement direction
-                move_dx = (dx / distance) * self.speed
-                move_dy = (dy / distance) * self.speed + self.dy
-                
-                # Update position
-                self.x += move_dx
-                self.y += move_dy
-                
-                # Add movement particles
-                if random.random() < 0.3:
-                    self.add_movement_particle()
+        # Calculate direction to target
+        dx = self.target_x - self.x
+        dy = self.target_y - self.y
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        if distance < self.speed:
+            # When reaching the target, mark as done
+            self.done = True
+            return True
         else:
-            # Apply gravity and fluid dynamics
-            if self.type == "liquid":
-                # Liquids spread out and settle quickly
-                self.dy += self.gravity * 0.8
-                self.dx *= 0.95  # Dampen horizontal movement
-            else:
-                # Solid ingredients bounce and roll
-                self.dy += self.gravity
-                self.dx *= 0.98  # Slight horizontal damping
+            # Move directly towards target
+            move_dx = (dx / distance) * self.speed
+            move_dy = (dy / distance) * self.speed
             
             # Update position
-            self.x += self.dx
-            self.y += self.dy
+            self.x += move_dx
+            self.y += move_dy
             
-            # Calculate bowl bottom based on current fill level
-            bowl_bottom = HEIGHT//2 + 40 - (80 * current_bowl_level)  # Adjust based on bowl fill
-            
-            # Bowl bottom collision
-            if self.y + self.size > bowl_bottom:
-                self.y = bowl_bottom - self.size
-                if abs(self.dy) > self.min_movement_threshold:
-                    # Bounce with damping
-                    self.dy = -abs(self.dy) * self.bounce_damping
-                    # Add bounce particles
-                    self.add_bounce_particles()
-                else:
-                    self.dy = 0
-                    if abs(self.dx) < self.min_movement_threshold:
-                        self.done = True
-            
-            # Bowl sides collision
-            bowl_left = WIDTH//2 - 70
-            bowl_right = WIDTH//2 + 70
-            
-            if self.x - self.size < bowl_left:
-                self.x = bowl_left + self.size
-                self.dx = abs(self.dx) * self.bounce_damping
-                self.add_collision_particles("left")
-            elif self.x + self.size > bowl_right:
-                self.x = bowl_right - self.size
-                self.dx = -abs(self.dx) * self.bounce_damping
-                self.add_collision_particles("right")
-            
-            # Add movement particles based on velocity
-            if (abs(self.dx) > 1 or abs(self.dy) > 1) and random.random() < 0.3:
-                self.add_movement_particle()
+            # Add movement particles less frequently
+            current_time = pygame.time.get_ticks() / 1000  # Convert to seconds
+            if current_time - self.last_particle_time >= self.particle_interval:
+                if random.random() < 0.3:
+                    self.add_movement_particle()
+                self.last_particle_time = current_time
         
         # Update existing particles
         self.update_particles()
         
-        return self.done
+        return False
 
     def add_movement_particle(self):
         """Add particles that follow the ingredient's movement"""
         particle = {
             'x': self.x + random.uniform(-self.size/2, self.size/2),
             'y': self.y + random.uniform(-self.size/2, self.size/2),
-            'dx': -self.dx * random.uniform(0.1, 0.3),
-            'dy': -self.dy * random.uniform(0.1, 0.3),
+            'dx': random.uniform(-1, 1),
+            'dy': random.uniform(-1, 1),
             'size': random.randint(2, 4),
             'alpha': 150,
-            'fade_speed': random.uniform(5, 10)
+            'fade_speed': random.uniform(8, 12)
         }
         self.particles.append(particle)
-
-    def add_bounce_particles(self):
-        """Add particles when the ingredient bounces"""
-        num_particles = random.randint(3, 6)
-        for _ in range(num_particles):
-            particle = {
-                'x': self.x + random.uniform(-self.size/2, self.size/2),
-                'y': self.y + self.size/2,
-                'dx': random.uniform(-2, 2),
-                'dy': random.uniform(-3, -1),
-                'size': random.randint(2, 4),
-                'alpha': 200,
-                'fade_speed': random.uniform(8, 12)
-            }
-            self.particles.append(particle)
-
-    def add_collision_particles(self, side):
-        """Add particles when the ingredient collides with bowl sides"""
-        num_particles = random.randint(2, 4)
-        for _ in range(num_particles):
-            dx = 2 if side == "left" else -2
-            particle = {
-                'x': self.x + (self.size/2 if side == "left" else -self.size/2),
-                'y': self.y + random.uniform(-self.size/2, self.size/2),
-                'dx': random.uniform(0.5, 1.5) * dx,
-                'dy': random.uniform(-1, 1),
-                'size': random.randint(2, 4),
-                'alpha': 180,
-                'fade_speed': random.uniform(8, 12)
-            }
-            self.particles.append(particle)
 
     def update_particles(self):
         """Update all particles"""
         for particle in self.particles[:]:
             particle['x'] += particle['dx']
             particle['y'] += particle['dy']
-            particle['dy'] += 0.1  # Particle gravity
             particle['alpha'] -= particle['fade_speed']
             if particle['alpha'] <= 0:
                 self.particles.remove(particle)
@@ -835,8 +804,8 @@ class AnimatedIngredient:
                        (particle['x'] - particle['size']//2,
                         particle['y'] - particle['size']//2))
         
-        # Draw ingredient with glow effect
-        if not self.done or self.type in ['dry', 'solid']:
+        # Only draw the ingredient if it hasn't reached the target
+        if not self.done:
             # Draw glow
             glow_size = self.size + 4
             glow_surface = pygame.Surface((glow_size * 2, glow_size * 2), pygame.SRCALPHA)
