@@ -35,23 +35,64 @@ def draw_intro_screen(screen):
     screen.blit(start_text, (start_x, start_y))
 
 def handle_dialogue(screen, game):
-    screen.fill(BLACK)
-    font = pygame.font.Font(None, 32)
-    if game.state == "intro":
-        text = "Welcome to Bakecoin! Press ENTER to start."
-    elif game.state == "choose_difficulty":
-        text = "Choose your difficulty: Easy (E), Normal (N), or Hard (H)."
-    elif game.state == "main_game":
-        text = "Click ingredients to add them to the bowl. Press ENTER to bake."
+    """Handle game state transitions with modern UI"""
+    # Draw background gradient
+    if hasattr(game, 'ui'):
+        game.ui.draw_background(screen)
     else:
-        return
-
-    text_surface = font.render(text, True, WHITE)
-    screen.blit(text_surface, (WIDTH // 2 - text_surface.get_width() // 2, HEIGHT // 2))
+        screen.fill(BLACK)
+    
+    # Create glass panel for dialogue
+    if hasattr(game, 'ui'):
+        panel_width = 600
+        panel_height = 200
+        panel_x = WIDTH//2 - panel_width//2
+        panel_y = HEIGHT//2 - panel_height//2
+        
+        dialogue_panel = game.ui.renderer.create_glass_panel(
+            panel_width,
+            panel_height,
+            game.ui.colors['glass_dark']
+        )
+        screen.blit(dialogue_panel, (panel_x, panel_y))
+        
+        # Get appropriate text based on game state
+        if game.state == "intro":
+            title = "Welcome to Bakecoin!"
+            text = "Press ENTER to start"
+        elif game.state == "choose_difficulty":
+            title = "Choose Your Difficulty"
+            text = "Press E (Easy), N (Normal), or H (Hard)"
+        else:
+            title = "Let's Start Baking!"
+            text = "Click ingredients to add them to the bowl. Press ENTER to bake."
+        
+        # Draw title
+        title_surface = game.ui.font_large.render(title, True, game.ui.colors['text'])
+        title_rect = title_surface.get_rect(center=(WIDTH//2, panel_y + 50))
+        screen.blit(title_surface, title_rect)
+        
+        # Draw instruction text
+        text_surface = game.ui.font_medium.render(text, True, game.ui.colors['text'])
+        text_rect = text_surface.get_rect(center=(WIDTH//2, panel_y + 120))
+        screen.blit(text_surface, text_rect)
+    else:
+        # Fallback to basic rendering if UI not initialized
+        font = pygame.font.Font(None, 32)
+        if game.state == "intro":
+            text = "Welcome to Bakecoin! Press ENTER to start."
+        elif game.state == "choose_difficulty":
+            text = "Choose your difficulty: Easy (E), Normal (N), or Hard (H)."
+        else:
+            text = "Click ingredients to add them to the bowl. Press ENTER to bake."
+        
+        text_surface = font.render(text, True, WHITE)
+        screen.blit(text_surface, (WIDTH//2 - text_surface.get_width()//2, HEIGHT//2))
+    
     pygame.display.flip()
-
+    
     print(f"Handling dialogue for state: {game.state}")  # Debug print
-
+    
     waiting = True
     while waiting:
         for event in pygame.event.get():

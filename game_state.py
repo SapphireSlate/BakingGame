@@ -32,6 +32,11 @@ class Game:
             "Meringue Cookies": ["Eggs", "Sugar", "Vanilla"],
             "Condensed Milk Fudge": ["Condensed Milk", "Chocolate Chips"]
         }
+        
+        # Initialize ModernUI
+        from ui import ModernUI
+        self.ui = ModernUI()
+        
         # ... other game state variables ...
         self.upgrades = {
             "Better Oven": {"cost": 50, "effect": "Reduces Oven malfunction chance", "icon": "🔥"},

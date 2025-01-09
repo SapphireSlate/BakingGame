@@ -193,8 +193,11 @@ def main():
                     game.baking = False
                     print(f"Baking complete. Result: {result}, Bakecoin change: {bakecoin_change}")  # Debug print
 
-                draw_game(screen, game, animation_manager, dt)
-                update_bakecoin_display(screen, game)
+                # Draw game UI using the modern system
+                game.ui.draw_game_ui(screen, game)
+                
+                # Update and draw animations
+                animation_manager.update_animations(screen, game, dt)
 
                 if popup_text:
                     popup_text.update()
