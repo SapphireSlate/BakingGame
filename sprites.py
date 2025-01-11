@@ -3,26 +3,29 @@ import math
 from config import WIDTH, HEIGHT, GRAY, DARK_GRAY, WHITE, BLACK
 
 INGREDIENT_COLORS = {
-    "Flour": (245, 240, 235),      # Soft cream white
-    "Sugar": (250, 245, 220),      # Warm sandy white
-    "Eggs": (255, 200, 50),        # Vibrant egg yolk yellow
-    "Milk": (240, 250, 255),       # Cool white with blue undertone
-    "Butter": (255, 190, 80),      # Rich golden yellow
-    "Cocoa": (45, 25, 15),         # Deep dark chocolate
-    "Vanilla": (200, 150, 100),    # Rich caramel brown
-    "Baking Powder": (255, 250, 250), # Bright white
-    "Powdered Sugar": (255, 255, 250), # Pure white
-    "Chocolate Chips": (30, 20, 10),   # Extra dark chocolate
-    "Condensed Milk": (255, 225, 180), # Golden cream
-    "Meringue": (255, 250, 245),      # Pure white with pink undertone
-    "Frosting": (220, 255, 250)       # Cool mint white
+    "Flour": (245, 240, 235, 255),      # Soft cream white
+    "Sugar": (250, 245, 220, 255),      # Warm sandy white
+    "Eggs": (255, 200, 50, 255),        # Vibrant egg yolk yellow
+    "Milk": (240, 250, 255, 255),       # Cool white with blue undertone
+    "Butter": (255, 190, 80, 255),      # Rich golden yellow
+    "Cocoa": (45, 25, 15, 255),         # Deep dark chocolate
+    "Vanilla": (200, 150, 100, 255),    # Rich caramel brown
+    "Baking Powder": (255, 250, 250, 255), # Bright white
+    "Powdered Sugar": (255, 255, 250, 255), # Pure white
+    "Chocolate Chips": (30, 20, 10, 255),   # Extra dark chocolate
+    "Condensed Milk": (255, 225, 180, 255), # Golden cream
+    "Meringue": (255, 250, 245, 255),      # Pure white with pink undertone
+    "Frosting": (220, 255, 250, 255)       # Cool mint white
 }
 
 def ensure_rgb(color):
-    """Ensure color is in RGB format (3 components)"""
-    if len(color) > 3:
-        return color[:3]
-    return color
+    """Convert color to RGB or RGBA format as needed"""
+    if len(color) == 4:  # RGBA
+        return color
+    elif len(color) == 3:  # RGB
+        return (*color, 255)  # Add full opacity
+    else:
+        raise ValueError(f"Invalid color format: {color}")
 
 class IngredientSprite(pygame.sprite.Sprite):
     def __init__(self, name, x, y, count):

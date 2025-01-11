@@ -186,18 +186,20 @@ class Game:
     # ... other methods to manage game state ...
 
     def choose_difficulty(self, key):
-        print(f"Choosing difficulty with key: {pygame.key.name(key)}")  # Debug print
+        """Set game difficulty based on key press"""
         if key == pygame.K_e:
             self.difficulty = "Easy"
-            self.bakecoin = 150  # Starting amount for Easy
+            self.bakecoin = 100
         elif key == pygame.K_n:
             self.difficulty = "Normal"
-            self.bakecoin = 75   # Starting amount for Normal
+            self.bakecoin = 75
         elif key == pygame.K_h:
             self.difficulty = "Hard"
-            self.bakecoin = 50   # Starting amount for Hard
-        self.state = "main_game"
-        print(f"Difficulty set to: {self.difficulty}, Bakecoin: {self.bakecoin}, State changed to: {self.state}")  # Debug print
+            self.bakecoin = 50
+        
+        self.state = "main_game"  # Explicitly set state to main_game
+        print(f"Difficulty set to: {self.difficulty}, Bakecoin: {self.bakecoin}, State changed to: {self.state}")
+        return True
 
     def trigger_kitchen_disaster(self):
         base_chance = self.apply_difficulty()["disaster_chance"]

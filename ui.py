@@ -35,7 +35,7 @@ def draw_intro_screen(screen):
     screen.blit(start_text, (start_x, start_y))
 
 def handle_dialogue(screen, game):
-    """Handle game state transitions with modern UI"""
+    """Draw dialogue UI based on game state"""
     # Draw background gradient
     if hasattr(game, 'ui'):
         game.ui.draw_background(screen)
@@ -51,7 +51,7 @@ def handle_dialogue(screen, game):
         
         # Create semi-transparent panel surface
         panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
-        glass_color = game.ui.colors.get('glass_dark', (20, 25, 35, 180))
+        glass_color = (20, 25, 35, 180)  # Fixed RGBA color
         pygame.draw.rect(panel_surface, glass_color, panel_surface.get_rect(), border_radius=10)
         screen.blit(panel_surface, (panel_x, panel_y))
         
@@ -67,7 +67,7 @@ def handle_dialogue(screen, game):
             text = "Click ingredients to add them to the bowl. Press ENTER to bake."
         
         # Use RGB tuples for text color
-        text_color = game.ui.colors.get('text', (255, 255, 255))
+        text_color = (255, 255, 255)  # Fixed RGB color
         
         # Draw title
         title_surface = game.ui.font_large.render(title, True, text_color)
@@ -92,26 +92,7 @@ def handle_dialogue(screen, game):
         screen.blit(text_surface, (WIDTH//2 - text_surface.get_width()//2, HEIGHT//2))
     
     pygame.display.flip()
-    
-    print(f"Handling dialogue for state: {game.state}")  # Debug print
-    
-    waiting = True
-    while waiting:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                quit()
-            if event.type == pygame.KEYDOWN:
-                if game.state == "intro" and event.key == pygame.K_RETURN:
-                    game.state = "choose_difficulty"
-                    waiting = False
-                    print("Transitioning to choose_difficulty")
-                elif game.state == "choose_difficulty":
-                    if event.key in [pygame.K_e, pygame.K_n, pygame.K_h]:
-                        game.choose_difficulty(event.key)
-                        waiting = False
-    
-    print(f"Dialogue ended. Game state: {game.state}, Bakecoin: {game.bakecoin}")  # Debug print
+    print(f"Drawing dialogue for state: {game.state}")  # Debug print
 
 def draw_recipe_book_screen(screen, game):
     screen.fill((255, 255, 255))
@@ -257,24 +238,24 @@ class ModernUI:
         self.font_medium = pygame.font.Font(None, 32)
         self.font_small = pygame.font.Font(None, 24)
         
-        # UI Colors - Modern, muted palette with proper RGB/RGBA values
+        # UI Colors - All colors defined as RGBA tuples
         self.colors = {
-            'primary': (60, 80, 135),
-            'secondary': (40, 50, 80),
-            'accent': (255, 180, 50),
-            'text': (255, 255, 255),
-            'text_dark': (20, 20, 30),
-            'panel': (30, 35, 50, 220),
+            'primary': (60, 80, 135, 255),
+            'secondary': (40, 50, 80, 200),
+            'accent': (255, 180, 50, 255),
+            'text': (255, 255, 255, 255),
+            'text_dark': (20, 20, 30, 255),
+            'panel': (30, 35, 50, 200),
             'panel_light': (50, 60, 80, 200),
-            'success': (100, 200, 100),
-            'error': (200, 80, 80),
-            'warning': (200, 150, 50),
+            'success': (100, 200, 100, 200),
+            'error': (200, 80, 80, 200),
+            'warning': (200, 150, 50, 200),
             'glass': (255, 255, 255, 40),
             'glass_dark': (20, 25, 35, 180),
-            'background': (20, 25, 35),
-            'background_light': (30, 35, 45),
-            'highlight': (70, 90, 150),
-            'shadow': (15, 20, 30, 180)
+            'background': (20, 25, 35, 255),
+            'background_light': (30, 35, 45, 255),
+            'highlight': (70, 90, 150, 200),
+            'shadow': (15, 20, 30, 200)
         }
         
         # UI Animation states
@@ -306,11 +287,14 @@ class ModernUI:
                     random.uniform(-100, 100),
                     random.uniform(0, 50)
                 ),
-                'color': (255, 255, 255),
+                'color': (255, 255, 255, 255),  # Added alpha channel
                 'size': random.uniform(2, 4),
                 'alpha': random.randint(50, 150),
                 'speed': random.uniform(0.5, 1.5)
             })
+        
+        # Initialize game state
+        self.state = "intro"
     
     def update_particles(self, dt):
         """Update particle positions and properties"""
@@ -335,9 +319,6 @@ class ModernUI:
         # Clear screen with a dark gradient background
         self.draw_background(screen)
         
-        # Update and draw particles
-        self.update_particles(1/60)  # Assuming 60 FPS
-        
         # Draw side panels with glass effect
         recipe_panel = pygame.Surface((self.recipe_panel_rect.width, self.recipe_panel_rect.height), pygame.SRCALPHA)
         pygame.draw.rect(recipe_panel, self.colors['glass_dark'], recipe_panel.get_rect(), border_radius=10)
@@ -347,12 +328,40 @@ class ModernUI:
         pygame.draw.rect(inventory_panel, self.colors['glass_dark'], inventory_panel.get_rect(), border_radius=10)
         screen.blit(inventory_panel, self.inventory_panel_rect)
         
-        # Draw mixing bowl (2D fallback if no renderer)
+        # Draw mixing bowl in center
         bowl_x = WIDTH // 2
         bowl_y = HEIGHT // 2
-        bowl_radius = 80
-        pygame.draw.circle(screen, self.colors['panel'], (bowl_x, bowl_y), bowl_radius)
-        pygame.draw.circle(screen, self.colors['panel_light'], (bowl_x, bowl_y), bowl_radius - 5)
+        bowl_width = 200  # Increased width
+        bowl_height = 120  # Increased height
+        
+        # Draw bowl shadow
+        shadow_surface = pygame.Surface((bowl_width + 20, bowl_height + 10), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow_surface, (0, 0, 0, 50), shadow_surface.get_rect())
+        screen.blit(shadow_surface, (bowl_x - (bowl_width + 20)//2, bowl_y - bowl_height//2 + 20))
+        
+        # Draw bowl base (more oval shaped)
+        bowl_rect = pygame.Rect(bowl_x - bowl_width//2, bowl_y - bowl_height//2, bowl_width, bowl_height)
+        pygame.draw.ellipse(screen, (*self.colors['panel'][:3], 255), bowl_rect)
+        
+        # Draw bowl rim (angled ellipse)
+        rim_height = 25
+        rim_rect = pygame.Rect(bowl_x - bowl_width//2, bowl_y - bowl_height//2 - rim_height//2, bowl_width, rim_height)
+        pygame.draw.ellipse(screen, (*self.colors['panel_light'][:3], 255), rim_rect)
+        
+        # Draw bowl contents if any ingredients
+        if game.current_ingredients:
+            content_color = self.get_mixed_color(game.current_ingredients)
+            content_rect = pygame.Rect(bowl_x - bowl_width//2 + 15, 
+                                     bowl_y - bowl_height//2 + 15, 
+                                     bowl_width - 30, 
+                                     bowl_height - 30)
+            pygame.draw.ellipse(screen, content_color, content_rect)
+            
+            # Add shine effect to contents
+            shine_surface = pygame.Surface((bowl_width - 30, bowl_height - 30), pygame.SRCALPHA)
+            shine_rect = shine_surface.get_rect()
+            pygame.draw.ellipse(shine_surface, (255, 255, 255, 30), shine_rect)
+            screen.blit(shine_surface, content_rect)
         
         # Draw ingredient grid
         self.draw_ingredient_grid(screen, game)
@@ -365,15 +374,16 @@ class ModernUI:
     
     def draw_background(self, screen):
         """Draw a modern gradient background"""
-        bg_start = self.colors.get('background', (20, 25, 35))
-        bg_end = self.colors.get('background_light', (30, 35, 45))
+        bg_start = self.colors.get('background', (20, 25, 35, 255))
+        bg_end = self.colors.get('background_light', (30, 35, 45, 255))
         
         for i in range(HEIGHT):
             progress = i / HEIGHT
             color = [
                 int(bg_start[0] + (bg_end[0] - bg_start[0]) * progress),
                 int(bg_start[1] + (bg_end[1] - bg_start[1]) * progress),
-                int(bg_start[2] + (bg_end[2] - bg_start[2]) * progress)
+                int(bg_start[2] + (bg_end[2] - bg_start[2]) * progress),
+                255  # Keep full opacity for background
             ]
             pygame.draw.line(screen, color, (0, i), (WIDTH, i))
     
@@ -384,11 +394,13 @@ class ModernUI:
         
         items_per_row = 2
         spacing_x = 120
-        spacing_y = 140
+        spacing_y = 100  # Reduced vertical spacing
         
         # Draw "Ingredients" title
         title = self.font_medium.render("Ingredients", True, self.colors['text'])
         screen.blit(title, (grid_start_x, grid_start_y - 40))
+        
+        mouse_pos = pygame.mouse.get_pos()
         
         for i, sprite in enumerate(game.ingredient_sprites):
             row = i // items_per_row
@@ -397,22 +409,77 @@ class ModernUI:
             x = grid_start_x + col * spacing_x
             y = grid_start_y + row * spacing_y
             
-            # Draw ingredient circle
-            radius = 30
+            # Update sprite's hover state based on mouse position
+            sprite.rect.center = (x, y)  # Update sprite's rect position
+            sprite.is_hovered = sprite.rect.collidepoint(mouse_pos)
+            
+            # Draw ingredient circle with hover effect
+            radius = 25  # Slightly smaller base radius
             if sprite.is_hovered:
-                radius += 5
-            pygame.draw.circle(screen, sprite.color, (x, y), radius)
+                radius = 30  # Larger radius on hover
+                # Draw hover glow
+                glow_radius = radius + 5
+                glow_surface = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
+                pygame.draw.circle(glow_surface, (*self.colors['accent'][:3], 100), 
+                                 (glow_radius, glow_radius), glow_radius)
+                screen.blit(glow_surface, (x - glow_radius, y - glow_radius))
+            
+            # Draw ingredient
+            color = sprite.color
+            if len(color) == 3:
+                color = (*color, 255)  # Add alpha if not present
+            pygame.draw.circle(screen, color, (x, y), radius)
             pygame.draw.circle(screen, self.colors['text'], (x, y), radius, 2)
             
-            # Draw ingredient name and count
+            # Draw ingredient name and count with improved visibility
             name_surface = self.font_small.render(sprite.name, True, self.colors['text'])
             count_surface = self.font_small.render(f"x{sprite.count}", True, self.colors['text'])
             
-            name_pos = (x - name_surface.get_width()//2, y + 40)
-            count_pos = (x - count_surface.get_width()//2, y + 60)
+            # Add background for better text visibility
+            text_bg = pygame.Surface((name_surface.get_width() + 10, name_surface.get_height() + 4), pygame.SRCALPHA)
+            pygame.draw.rect(text_bg, self.colors['glass_dark'], text_bg.get_rect(), border_radius=4)
             
+            name_pos = (x - name_surface.get_width()//2, y + radius + 5)
+            count_pos = (x - count_surface.get_width()//2, y + radius + 25)
+            
+            # Draw text backgrounds
+            screen.blit(text_bg, (name_pos[0] - 5, name_pos[1] - 2))
             screen.blit(name_surface, name_pos)
             screen.blit(count_surface, count_pos)
+    
+    def get_mixed_color(self, ingredients):
+        """Get a mixed color based on current ingredients"""
+        if not ingredients:
+            return self.colors['panel']
+        
+        # Define base colors for ingredients (all with alpha)
+        ingredient_colors = {
+            'Flour': (240, 240, 240, 255),  # White
+            'Sugar': (255, 250, 250, 255),  # Off-white
+            'Eggs': (255, 223, 168, 255),   # Light yellow
+            'Milk': (255, 255, 255, 255),   # White
+            'Butter': (255, 225, 120, 255), # Yellow
+            'Cocoa': (101, 67, 33, 255),    # Brown
+            'Vanilla': (255, 229, 180, 255), # Cream
+            'Baking Powder': (255, 255, 255, 255), # White
+            'Chocolate Chips': (80, 50, 20, 255),  # Dark brown
+            'Condensed Milk': (255, 248, 220, 255), # Cream
+            'Meringue': (255, 255, 255, 255),      # White
+            'Powdered Sugar': (255, 255, 255, 255), # White
+            'Frosting': (255, 255, 255, 255)       # White
+        }
+        
+        # Mix colors
+        r, g, b, a = 0, 0, 0, 0
+        for ingredient in ingredients:
+            color = ingredient_colors.get(ingredient, (200, 200, 200, 255))
+            r += color[0]
+            g += color[1]
+            b += color[2]
+            a += color[3]
+        
+        count = len(ingredients)
+        return (r//count, g//count, b//count, a//count)
     
     def draw_recipe_panel(self, screen, game):
         """Draw recipe panel with modern styling"""
@@ -460,7 +527,7 @@ class ModernUI:
         top_bar.blit(coin_text, coin_pos)
         
         screen.blit(top_bar, (0, 0))
-        
+    
     def draw_button(self, screen, rect, text, color=None, hover=False, active=False):
         """Draw a modern button with glass effect"""
         if color is None:
@@ -468,7 +535,15 @@ class ModernUI:
             
         # Create button surface
         button_surface = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        button_color = (*color[:3], color[3] + 40 if hover else color[3])
+        
+        # Handle both RGB and RGBA color tuples
+        if len(color) == 3:
+            # If RGB, add alpha of 200
+            button_color = (*color, 200 if not hover else 240)
+        else:
+            # If RGBA, adjust alpha based on hover
+            button_color = (*color[:3], color[3] + 40 if hover else color[3])
+            
         pygame.draw.rect(button_surface, button_color, button_surface.get_rect(), border_radius=10)
         
         # Draw text
