@@ -1,6 +1,47 @@
 # Baking Game
 
-A Python-based cooking simulation game where players can mix ingredients, discover recipes, and earn Bakecoin.
+An advanced baking simulation game built with Pygame.
+
+## Installation
+
+### From GitHub Release (Recommended)
+1. Go to the [Releases](https://github.com/yourusername/baking-game/releases) page
+2. Download the latest release for your operating system
+3. Extract the archive and run the executable
+
+### From Source
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/baking-game.git
+cd baking-game
+
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install the game
+pip install -e .
+
+# Run the game
+baking-game
+```
+
+## Development Setup
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/baking-game.git
+cd baking-game
+
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install development dependencies
+pip install -r requirements.txt
+
+# Run the game directly
+python baking_game.py
+```
 
 ## Overview
 
@@ -17,25 +58,6 @@ This game is built using Pygame and features:
 - Python 3.12+
 - Pygame 2.6.1+
 - SDL 2.28.4+
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/SapphireSlate/BakingGame.git
-cd BakingGame
-```
-
-2. Create and activate a virtual environment:
-```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
 
 ## Running the Game
 
