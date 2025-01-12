@@ -4,95 +4,136 @@ import math
 import random
 
 def draw_intro_screen(screen):
-    screen.fill(BLACK)
+    """Draw the intro screen with title and start prompt"""
+    # Fill screen with dark background
+    screen.fill((20, 25, 35))
+    
+    # Create title text
+    title_font = pygame.font.Font(None, 72)
+    title_text = title_font.render("Bakecoin", True, (255, 255, 255))
+    title_rect = title_text.get_rect(center=(WIDTH//2, HEIGHT//3))
     
     # Create semi-transparent background for title
-    title_font = pygame.font.Font(None, 64)
-    title_text = title_font.render("Bakecoin", True, WHITE, None)
+    title_bg = pygame.Surface((title_rect.width + 40, title_rect.height + 20), pygame.SRCALPHA)
+    pygame.draw.rect(title_bg, (40, 45, 60, 180), title_bg.get_rect(), border_radius=10)
     
-    # Create background surface for title
-    title_bg = pygame.Surface((title_text.get_width() + 40, title_text.get_height() + 20), pygame.SRCALPHA)
-    pygame.draw.rect(title_bg, (20, 20, 40, 180), title_bg.get_rect())
+    # Draw title background and text
+    screen.blit(title_bg, (title_rect.x - 20, title_rect.y - 10))
+    screen.blit(title_text, title_rect)
     
-    # Position and draw title
-    title_x = WIDTH // 2 - title_text.get_width() // 2
-    title_y = HEIGHT // 2
-    screen.blit(title_bg, (title_x - 20, title_y - 10))
-    screen.blit(title_text, (title_x, title_y))
+    # Create start prompt text
+    prompt_font = pygame.font.Font(None, 36)
+    prompt_text = prompt_font.render("Press ENTER to Start", True, (200, 200, 200))
+    prompt_rect = prompt_text.get_rect(center=(WIDTH//2, HEIGHT * 3//4))
     
-    # Create semi-transparent background for start text
-    start_font = pygame.font.Font(None, 32)
-    start_text = start_font.render("Press ENTER to start", True, WHITE, None)
+    # Create semi-transparent background for prompt
+    prompt_bg = pygame.Surface((prompt_rect.width + 40, prompt_rect.height + 20), pygame.SRCALPHA)
+    pygame.draw.rect(prompt_bg, (40, 45, 60, 180), prompt_bg.get_rect(), border_radius=10)
     
-    # Create background surface for start text
-    start_bg = pygame.Surface((start_text.get_width() + 40, start_text.get_height() + 20), pygame.SRCALPHA)
-    pygame.draw.rect(start_bg, (20, 20, 40, 180), start_bg.get_rect())
+    # Draw prompt background and text
+    screen.blit(prompt_bg, (prompt_rect.x - 20, prompt_rect.y - 10))
+    screen.blit(prompt_text, prompt_rect)
     
-    # Position and draw start text
-    start_x = WIDTH // 2 - start_text.get_width() // 2
-    start_y = HEIGHT * 3 // 4
-    screen.blit(start_bg, (start_x - 20, start_y - 10))
-    screen.blit(start_text, (start_x, start_y))
+    # Draw version number
+    version_font = pygame.font.Font(None, 24)
+    version_text = version_font.render("v1.0", True, (128, 128, 128))
+    version_rect = version_text.get_rect(bottomright=(WIDTH - 10, HEIGHT - 10))
+    screen.blit(version_text, version_rect)
+    
+    # Draw decorative elements
+    draw_decorative_elements(screen)
+
+def draw_decorative_elements(screen):
+    """Draw decorative elements on the intro screen"""
+    # Draw floating particles
+    for _ in range(20):
+        x = random.randint(0, WIDTH)
+        y = random.randint(0, HEIGHT)
+        size = random.randint(2, 4)
+        alpha = random.randint(50, 150)
+        particle_color = (255, 255, 255, alpha)
+        
+        particle_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+        pygame.draw.circle(particle_surface, particle_color, (size//2, size//2), size//2)
+        screen.blit(particle_surface, (x, y))
+    
+    # Draw subtle grid lines
+    for x in range(0, WIDTH, 40):
+        alpha = 30
+        pygame.draw.line(screen, (255, 255, 255, alpha), (x, 0), (x, HEIGHT))
+    for y in range(0, HEIGHT, 40):
+        alpha = 30
+        pygame.draw.line(screen, (255, 255, 255, alpha), (0, y), (WIDTH, y))
 
 def handle_dialogue(screen, game):
-    """Draw dialogue UI based on game state"""
-    # Draw background gradient
-    if hasattr(game, 'ui'):
-        game.ui.draw_background(screen)
-    else:
-        screen.fill((0, 0, 0))  # Use RGB tuple for black
-    
-    # Create glass panel for dialogue
-    if hasattr(game, 'ui'):
-        panel_width = 600
-        panel_height = 200
-        panel_x = WIDTH//2 - panel_width//2
-        panel_y = HEIGHT//2 - panel_height//2
-        
-        # Create semi-transparent panel surface
-        panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
-        glass_color = (20, 25, 35, 180)  # Fixed RGBA color
-        pygame.draw.rect(panel_surface, glass_color, panel_surface.get_rect(), border_radius=10)
-        screen.blit(panel_surface, (panel_x, panel_y))
-        
-        # Get appropriate text based on game state
-        if game.state == "intro":
-            title = "Welcome to Bakecoin!"
-            text = "Press ENTER to start"
-        elif game.state == "choose_difficulty":
-            title = "Choose Your Difficulty"
-            text = "Press E (Easy), N (Normal), or H (Hard)"
-        else:
-            title = "Let's Start Baking!"
-            text = "Click ingredients to add them to the bowl. Press ENTER to bake."
-        
-        # Use RGB tuples for text color
-        text_color = (255, 255, 255)  # Fixed RGB color
+    """Handle dialogue screens including difficulty selection"""
+    if game.state == "choose_difficulty":
+        # Fill screen with dark background
+        screen.fill((20, 25, 35))
         
         # Draw title
-        title_surface = game.ui.font_large.render(title, True, text_color)
-        title_rect = title_surface.get_rect(center=(WIDTH//2, panel_y + 50))
-        screen.blit(title_surface, title_rect)
+        title_font = pygame.font.Font(None, 48)
+        title_text = title_font.render("Choose Difficulty", True, (255, 255, 255))
+        title_rect = title_text.get_rect(center=(WIDTH//2, HEIGHT//4))
+        screen.blit(title_text, title_rect)
         
-        # Draw instruction text
-        text_surface = game.ui.font_medium.render(text, True, text_color)
-        text_rect = text_surface.get_rect(center=(WIDTH//2, panel_y + 120))
-        screen.blit(text_surface, text_rect)
-    else:
-        # Fallback to basic rendering if UI not initialized
-        font = pygame.font.Font(None, 32)
-        if game.state == "intro":
-            text = "Welcome to Bakecoin! Press ENTER to start."
-        elif game.state == "choose_difficulty":
-            text = "Choose your difficulty: Easy (E), Normal (N), or Hard (H)."
-        else:
-            text = "Click ingredients to add them to the bowl. Press ENTER to bake."
+        # Draw difficulty options
+        options_font = pygame.font.Font(None, 36)
+        difficulties = [
+            ("Easy", "Start with 100 Bakecoin", "Less frequent disasters", "E"),
+            ("Normal", "Start with 75 Bakecoin", "Regular gameplay", "N"),
+            ("Hard", "Start with 50 Bakecoin", "More frequent disasters", "H")
+        ]
         
-        text_surface = font.render(text, True, (255, 255, 255))  # Use RGB tuple for white
-        screen.blit(text_surface, (WIDTH//2 - text_surface.get_width()//2, HEIGHT//2))
-    
-    pygame.display.flip()
-    print(f"Drawing dialogue for state: {game.state}")  # Debug print
+        mouse_pos = pygame.mouse.get_pos()
+        difficulty_rects = []  # Store rectangles for mouse interaction
+        
+        for i, (diff, coins, desc, key) in enumerate(difficulties):
+            y_pos = HEIGHT//2 + i * 80
+            
+            # Create option background
+            option_rect = pygame.Rect(WIDTH//2 - 200, y_pos - 10, 400, 60)
+            is_hovered = option_rect.collidepoint(mouse_pos)
+            
+            # Store rectangle for click detection
+            difficulty_rects.append((option_rect, diff))
+            
+            # Draw background with hover effect
+            bg_color = (60, 65, 80, 230) if is_hovered else (40, 45, 60, 180)
+            option_bg = pygame.Surface((400, 60), pygame.SRCALPHA)
+            pygame.draw.rect(option_bg, bg_color, option_bg.get_rect(), border_radius=10)
+            screen.blit(option_bg, option_rect)
+            
+            # Draw difficulty name with key hint
+            diff_text = options_font.render(f"{diff} ({key})", True, (255, 255, 255))
+            diff_rect = diff_text.get_rect(midleft=(WIDTH//2 - 180, y_pos + 20))
+            screen.blit(diff_text, diff_rect)
+            
+            # Draw description
+            desc_font = pygame.font.Font(None, 24)
+            desc_text = desc_font.render(desc, True, (200, 200, 200))
+            desc_rect = desc_text.get_rect(midleft=(WIDTH//2 - 180, y_pos + 40))
+            screen.blit(desc_text, desc_rect)
+            
+            # Draw coins info
+            coins_text = desc_font.render(coins, True, (255, 215, 0))  # Gold color
+            coins_rect = coins_text.get_rect(midright=(WIDTH//2 + 180, y_pos + 20))
+            screen.blit(coins_text, coins_rect)
+        
+        # Handle mouse clicks
+        for event in pygame.event.get():
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                for rect, difficulty in difficulty_rects:
+                    if rect.collidepoint(event.pos):
+                        game.difficulty = difficulty
+                        game.state = "main_game"
+                        print(f"Starting game with difficulty: {difficulty}")
+                        if difficulty == "Easy":
+                            game.bakecoin = 100
+                        elif difficulty == "Normal":
+                            game.bakecoin = 75
+                        else:  # Hard
+                            game.bakecoin = 50
 
 def draw_recipe_book_screen(screen, game):
     screen.fill((255, 255, 255))
@@ -233,46 +274,25 @@ class Button:
 
 class ModernUI:
     def __init__(self):
-        self.font_title = pygame.font.Font(None, 64)
-        self.font_large = pygame.font.Font(None, 48)
-        self.font_medium = pygame.font.Font(None, 32)
+        # Initialize fonts
         self.font_small = pygame.font.Font(None, 24)
+        self.font_medium = pygame.font.Font(None, 32)
+        self.font_large = pygame.font.Font(None, 48)
         
-        # UI Colors - All colors defined as RGBA tuples
+        # Modern color scheme
         self.colors = {
-            'primary': (60, 80, 135, 255),
-            'secondary': (40, 50, 80, 200),
-            'accent': (255, 180, 50, 255),
-            'text': (255, 255, 255, 255),
-            'text_dark': (20, 20, 30, 255),
-            'panel': (30, 35, 50, 200),
-            'panel_light': (50, 60, 80, 200),
-            'success': (100, 200, 100, 200),
-            'error': (200, 80, 80, 200),
-            'warning': (200, 150, 50, 200),
-            'glass': (255, 255, 255, 40),
-            'glass_dark': (20, 25, 35, 180),
             'background': (20, 25, 35, 255),
-            'background_light': (30, 35, 45, 255),
-            'highlight': (70, 90, 150, 200),
-            'shadow': (15, 20, 30, 200)
+            'panel': (40, 45, 60, 200),
+            'panel_light': (60, 65, 80, 200),
+            'glass': (255, 255, 255, 30),
+            'glass_dark': (20, 25, 35, 180),
+            'text': (255, 255, 255, 255),
+            'text_dark': (20, 25, 35, 255),
+            'accent': (100, 200, 255, 255),
+            'success': (100, 255, 100, 255),
+            'warning': (255, 200, 100, 255),
+            'error': (255, 100, 100, 255)
         }
-        
-        # UI Animation states
-        self.animations = {
-            'menu_offset': 0,
-            'panel_alpha': 0,
-            'hover_scale': 1.0,
-            'rotation': 0
-        }
-        
-        try:
-            # Initialize 3D renderer
-            from render_3d import IsometricRenderer
-            self.renderer = IsometricRenderer()
-        except ImportError as e:
-            print(f"Warning: Could not import IsometricRenderer: {e}")
-            self.renderer = None
         
         # Panel positions and dimensions
         self.recipe_panel_rect = pygame.Rect(WIDTH - 280, 20, 260, HEIGHT - 40)
@@ -287,7 +307,7 @@ class ModernUI:
                     random.uniform(-100, 100),
                     random.uniform(0, 50)
                 ),
-                'color': (255, 255, 255, 255),  # Added alpha channel
+                'color': (255, 255, 255, 255),
                 'size': random.uniform(2, 4),
                 'alpha': random.randint(50, 150),
                 'speed': random.uniform(0.5, 1.5)
@@ -295,7 +315,7 @@ class ModernUI:
         
         # Initialize game state
         self.state = "intro"
-    
+
     def update_particles(self, dt):
         """Update particle positions and properties"""
         for particle in self.particles:
@@ -328,50 +348,19 @@ class ModernUI:
         pygame.draw.rect(inventory_panel, self.colors['glass_dark'], inventory_panel.get_rect(), border_radius=10)
         screen.blit(inventory_panel, self.inventory_panel_rect)
         
-        # Draw mixing bowl in center
-        bowl_x = WIDTH // 2
-        bowl_y = HEIGHT // 2
-        bowl_width = 200  # Increased width
-        bowl_height = 120  # Increased height
-        
-        # Draw bowl shadow
-        shadow_surface = pygame.Surface((bowl_width + 20, bowl_height + 10), pygame.SRCALPHA)
-        pygame.draw.ellipse(shadow_surface, (0, 0, 0, 50), shadow_surface.get_rect())
-        screen.blit(shadow_surface, (bowl_x - (bowl_width + 20)//2, bowl_y - bowl_height//2 + 20))
-        
-        # Draw bowl base (more oval shaped)
-        bowl_rect = pygame.Rect(bowl_x - bowl_width//2, bowl_y - bowl_height//2, bowl_width, bowl_height)
-        pygame.draw.ellipse(screen, (*self.colors['panel'][:3], 255), bowl_rect)
-        
-        # Draw bowl rim (angled ellipse)
-        rim_height = 25
-        rim_rect = pygame.Rect(bowl_x - bowl_width//2, bowl_y - bowl_height//2 - rim_height//2, bowl_width, rim_height)
-        pygame.draw.ellipse(screen, (*self.colors['panel_light'][:3], 255), rim_rect)
-        
-        # Draw bowl contents if any ingredients
-        if game.current_ingredients:
-            content_color = self.get_mixed_color(game.current_ingredients)
-            content_rect = pygame.Rect(bowl_x - bowl_width//2 + 15, 
-                                     bowl_y - bowl_height//2 + 15, 
-                                     bowl_width - 30, 
-                                     bowl_height - 30)
-            pygame.draw.ellipse(screen, content_color, content_rect)
-            
-            # Add shine effect to contents
-            shine_surface = pygame.Surface((bowl_width - 30, bowl_height - 30), pygame.SRCALPHA)
-            shine_rect = shine_surface.get_rect()
-            pygame.draw.ellipse(shine_surface, (255, 255, 255, 30), shine_rect)
-            screen.blit(shine_surface, content_rect)
-        
-        # Draw ingredient grid
-        self.draw_ingredient_grid(screen, game)
-        
         # Draw recipe list with modern styling
         self.draw_recipe_panel(screen, game)
         
         # Draw top bar with game info
         self.draw_top_bar(screen, game)
-    
+        
+        # Draw bottom buttons first
+        self.draw_replenish_button(screen, game)
+        self.draw_upgrades(screen, game)
+        
+        # Draw ingredient grid last to ensure it's on top
+        self.draw_ingredient_grid(screen, game)
+
     def draw_background(self, screen):
         """Draw a modern gradient background"""
         bg_start = self.colors.get('background', (20, 25, 35, 255))
@@ -393,12 +382,12 @@ class ModernUI:
         grid_start_y = self.inventory_panel_rect.y + 60
         
         items_per_row = 2
-        spacing_x = 120
-        spacing_y = 100  # Reduced vertical spacing
+        spacing_x = 160  # Reduced from 180 to 160 for even tighter horizontal spacing
+        spacing_y = 110
         
-        # Draw "Ingredients" title
+        # Draw "Ingredients" title with less padding
         title = self.font_medium.render("Ingredients", True, self.colors['text'])
-        screen.blit(title, (grid_start_x, grid_start_y - 40))
+        screen.blit(title, (grid_start_x, self.inventory_panel_rect.y + 20))
         
         mouse_pos = pygame.mouse.get_pos()
         
@@ -409,27 +398,26 @@ class ModernUI:
             x = grid_start_x + col * spacing_x
             y = grid_start_y + row * spacing_y
             
-            # Update sprite's hover state based on mouse position
-            sprite.rect.center = (x, y)  # Update sprite's rect position
-            sprite.is_hovered = sprite.rect.collidepoint(mouse_pos)
+            # Update sprite's position
+            sprite.rect.center = (x + 110, y + 60)
             
             # Draw ingredient circle with hover effect
-            radius = 25  # Slightly smaller base radius
-            if sprite.is_hovered:
-                radius = 30  # Larger radius on hover
+            radius = 25
+            if sprite.is_hovered:  # Using sprite's own hover detection
+                radius = 30
                 # Draw hover glow
                 glow_radius = radius + 5
                 glow_surface = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
                 pygame.draw.circle(glow_surface, (*self.colors['accent'][:3], 100), 
                                  (glow_radius, glow_radius), glow_radius)
-                screen.blit(glow_surface, (x - glow_radius, y - glow_radius))
+                screen.blit(glow_surface, (x + 110 - glow_radius, y + 60 - glow_radius))
             
             # Draw ingredient
             color = sprite.color
             if len(color) == 3:
-                color = (*color, 255)  # Add alpha if not present
-            pygame.draw.circle(screen, color, (x, y), radius)
-            pygame.draw.circle(screen, self.colors['text'], (x, y), radius, 2)
+                color = (*color, 255)
+            pygame.draw.circle(screen, color, (x + 110, y + 60), radius)
+            pygame.draw.circle(screen, self.colors['text'], (x + 110, y + 60), radius, 2)
             
             # Draw ingredient name and count with improved visibility
             name_surface = self.font_small.render(sprite.name, True, self.colors['text'])
@@ -439,8 +427,8 @@ class ModernUI:
             text_bg = pygame.Surface((name_surface.get_width() + 10, name_surface.get_height() + 4), pygame.SRCALPHA)
             pygame.draw.rect(text_bg, self.colors['glass_dark'], text_bg.get_rect(), border_radius=4)
             
-            name_pos = (x - name_surface.get_width()//2, y + radius + 5)
-            count_pos = (x - count_surface.get_width()//2, y + radius + 25)
+            name_pos = (x + 110 - name_surface.get_width()//2, y + 90)
+            count_pos = (x + 110 - count_surface.get_width()//2, y + 110)
             
             # Draw text backgrounds
             screen.blit(text_bg, (name_pos[0] - 5, name_pos[1] - 2))
@@ -484,11 +472,11 @@ class ModernUI:
     def draw_recipe_panel(self, screen, game):
         """Draw recipe panel with modern styling"""
         panel_x = self.recipe_panel_rect.x + 20
-        panel_y = self.recipe_panel_rect.y + 60
+        panel_y = self.recipe_panel_rect.y + 100  # Increased from 80 to 100 to match ingredient spacing
         
         # Draw "Recipes" title
         title = self.font_medium.render("Recipes", True, self.colors['text'])
-        screen.blit(title, (panel_x, panel_y - 40))
+        screen.blit(title, (panel_x, self.recipe_panel_rect.y + 30))  # Keep title position the same
         
         # Draw recipe list
         for i, recipe in enumerate(game.discovered_recipes):
@@ -557,3 +545,87 @@ class ModernUI:
                            button_surface.get_rect(), border_radius=10)
         
         screen.blit(button_surface, rect)
+
+    def draw_replenish_button(self, screen, game):
+        """Draw the replenish ingredients button"""
+        button_x = 20
+        button_y = HEIGHT - 100
+        button_width = 200
+        button_height = 40
+        
+        # Create button surface with glass effect
+        button_surface = pygame.Surface((button_width, button_height), pygame.SRCALPHA)
+        
+        # Check if player has enough bakecoin
+        can_afford = game.bakecoin >= 25
+        
+        # Draw button background
+        if can_afford:
+            color = self.colors['panel'] if not pygame.Rect(button_x, button_y, button_width, button_height).collidepoint(pygame.mouse.get_pos()) else self.colors['panel_light']
+        else:
+            color = (*self.colors['panel'][:3], 100)  # Semi-transparent when can't afford
+            
+        pygame.draw.rect(button_surface, color, button_surface.get_rect(), border_radius=5)
+        
+        # Draw button text
+        text = self.font_small.render("Replenish (25🪙)", True, self.colors['text'] if can_afford else (*self.colors['text'][:3], 100))
+        text_rect = text.get_rect(center=(button_width//2, button_height//2))
+        button_surface.blit(text, text_rect)
+        
+        # Draw button on screen
+        screen.blit(button_surface, (button_x, button_y))
+
+    def draw_upgrades(self, screen, game):
+        """Draw upgrade options using modern UI"""
+        upgrade_height = 50
+        spacing = 10
+        total_width = WIDTH - 40  # Account for screen edges with more padding
+        button_width = (total_width - (spacing * (len(game.upgrades) - 1))) // len(game.upgrades)
+        
+        y = HEIGHT - upgrade_height - spacing
+        
+        # Calculate total buttons width
+        total_buttons_width = (button_width * len(game.upgrades)) + (spacing * (len(game.upgrades) - 1))
+        start_x = (WIDTH - total_buttons_width) // 2  # Center the buttons horizontally
+        
+        for i, (name, upgrade) in enumerate(game.upgrades.items()):
+            x = start_x + i * (button_width + spacing)
+            
+            # Create upgrade button rect
+            button_rect = pygame.Rect(x, y, button_width, upgrade_height)
+            
+            # Determine button state
+            is_active = name in game.active_upgrades
+            is_affordable = game.bakecoin >= upgrade['cost']
+            is_hovered = button_rect.collidepoint(pygame.mouse.get_pos())
+            
+            # Create button surface
+            button_surface = pygame.Surface((button_width, upgrade_height), pygame.SRCALPHA)
+            
+            # Draw button background
+            if is_active:
+                color = self.colors['success']
+            elif is_affordable:
+                color = self.colors['panel_light'] if is_hovered else self.colors['panel']
+            else:
+                color = (*self.colors['panel'][:3], 100)  # Semi-transparent when can't afford
+                
+            pygame.draw.rect(button_surface, color, button_surface.get_rect(), border_radius=5)
+            
+            # Draw upgrade info
+            text = f"{upgrade['icon']} {name} ({upgrade['cost']}🪙)"
+            text_surface = self.font_small.render(text, True, 
+                self.colors['text'] if (is_active or is_affordable) else (*self.colors['text'][:3], 100))
+            
+            # Scale text if too wide for button
+            if text_surface.get_width() > button_width - 20:
+                scale = (button_width - 20) / text_surface.get_width()
+                new_width = int(text_surface.get_width() * scale)
+                new_height = int(text_surface.get_height() * scale)
+                text_surface = pygame.transform.smoothscale(text_surface, (new_width, new_height))
+            
+            text_rect = text_surface.get_rect(center=(button_width//2, upgrade_height//2))
+            button_surface.blit(text_surface, text_rect)
+            
+            # Draw button on screen
+            screen.blit(button_surface, button_rect)

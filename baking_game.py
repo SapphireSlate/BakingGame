@@ -24,17 +24,33 @@ def handle_events(game, animation_manager):
             return False
             
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1 and game.state == "main_game":  # Left click
-                handle_mouse_click(event, game, animation_manager)
+            if event.button == 1:  # Left click
+                if game.state == "intro":
+                    # Check if click is in the "Press ENTER to start" region
+                    x, y = event.pos
+                    if HEIGHT * 2/3 <= y <= HEIGHT * 4/5:
+                        game.state = "choose_difficulty"
+                elif game.state == "main_game":
+                    handle_mouse_click(event, game, animation_manager)
                 
         elif event.type == pygame.KEYDOWN:
-            print(f"Key pressed: {pygame.key.name(event.key)}, Game state: {game.state}, Baking: {game.baking}")  # Debug print
             if game.state == "intro":
                 if event.key == pygame.K_RETURN:
                     game.state = "choose_difficulty"
+                    print("Transitioning to choose_difficulty")  # Debug print
             elif game.state == "choose_difficulty":
                 if event.key in [pygame.K_e, pygame.K_n, pygame.K_h]:
-                    game.choose_difficulty(event.key)
+                    if event.key == pygame.K_e:
+                        game.difficulty = "Easy"
+                        game.bakecoin = 100
+                    elif event.key == pygame.K_n:
+                        game.difficulty = "Normal"
+                        game.bakecoin = 75
+                    elif event.key == pygame.K_h:
+                        game.difficulty = "Hard"
+                        game.bakecoin = 50
+                    game.state = "main_game"
+                    print(f"Starting game with difficulty: {game.difficulty}")  # Debug print
             elif game.state == "main_game":
                 if event.key == pygame.K_RETURN and not game.baking and len(game.current_ingredients) > 0:
                     game.baking = True
@@ -113,6 +129,9 @@ def main():
     game = Game(animation_manager)
     clock = pygame.time.Clock()
     
+    # Initialize background
+    background = Background()
+    
     running = True
     while running:
         dt = clock.tick(60) / 1000.0  # Convert to seconds
@@ -120,8 +139,11 @@ def main():
         # Handle events
         running = handle_events(game, animation_manager)
         
-        # Clear screen
-        screen.fill((20, 25, 35))  # Dark background
+        # Update background
+        background.update()
+        
+        # Draw background
+        background.draw(screen)
         
         # Update and draw based on game state
         if game.state == "intro":
@@ -141,13 +163,15 @@ def main():
                 
                 # Handle baking process
                 if game.baking:
-                    result, bakecoin_change = game.handle_baking_process()
+                    result = game.handle_baking_process()
                     if result:
-                        animation_manager.add_popup_message(result, 
-                            (0, 255, 0) if bakecoin_change > 0 else (255, 0, 0))
+                        animation_manager.add_popup_message(result[0], 
+                            (0, 255, 0) if result[1] > 0 else (255, 0, 0))
                     game.baking = False
             except Exception as e:
                 print(f"Error in game loop: {str(e)}")
+                import traceback
+                traceback.print_exc()  # Print full traceback for debugging
                 continue
         
         # Update display

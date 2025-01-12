@@ -31,120 +31,124 @@ class IngredientSprite(pygame.sprite.Sprite):
     def __init__(self, name, x, y, count):
         super().__init__()
         self.name = name
-        self.color = ensure_rgb(INGREDIENT_COLORS.get(name, (200, 200, 200)))
-        self.image = pygame.Surface((100, 100), pygame.SRCALPHA)
-        self.rect = self.image.get_rect(center=(x, y))
         self.count = count
+        self.font = pygame.font.Font(None, 24)
         
-        # 3D effect parameters
-        self.depth = 20  # Depth of 3D effect
-        self.angle = 0  # Current rotation angle
-        self.target_angle = 0  # Target rotation angle
-        self.rotation_speed = 0.1  # Speed of rotation
-        self.perspective = 800  # Perspective distance
-        
-        # Animation parameters
-        self.hover_height = 0
-        self.target_hover_height = 0
-        self.hover_speed = 0.2
-        self.bounce_offset = 0
-        self.bounce_speed = 0.05
-        self.scale = 1.0
-        self.target_scale = 1.0
-        
-        # Interaction states
+        # Use global INGREDIENT_COLORS and ensure proper RGBA format
+        self.color = ensure_rgb(INGREDIENT_COLORS.get(name, (200, 200, 200, 255)))
         self.is_hovered = False
         self.is_clicked = False
-        self.is_selected = False
         
-        # Movement parameters
-        self.is_moving = False
-        self.target_x = x
-        self.target_y = y
-        self.speed = 5
-        self.bounce_time = 0
+        # Create sprite image with increased width
+        self.image = pygame.Surface((220, 120), pygame.SRCALPHA)  # Increased width from 200 to 220
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
         
-        # Size parameters
-        self.normal_radius = 35
-        self.hover_radius = int(self.normal_radius * 1.1)
-        self.click_radius = int(self.normal_radius * 0.9)
-        self.current_radius = self.normal_radius
+        self.update_appearance()
         
-        # Initialize 3D position
-        self.pos_3d = [x - WIDTH/2, y - HEIGHT/2, 0]
-        self.target_pos_3d = self.pos_3d.copy()
+    def get_wrapped_text(self, text, max_width):
+        """Get text that fits within max_width by wrapping or scaling"""
+        # Try rendering at normal size first
+        rendered = self.font.render(text, True, (0, 0, 0))
+        if rendered.get_width() <= max_width:
+            return [text]
+            
+        # If too wide, try splitting into two lines
+        words = text.split()
+        if len(words) > 1:
+            mid = len(words) // 2
+            line1 = " ".join(words[:mid])
+            line2 = " ".join(words[mid:])
+            
+            # Check if both lines fit
+            rendered1 = self.font.render(line1, True, (0, 0, 0))
+            rendered2 = self.font.render(line2, True, (0, 0, 0))
+            
+            if max(rendered1.get_width(), rendered2.get_width()) <= max_width:
+                return [line1, line2]
+        
+        # If still too wide or single word, scale down the font
+        original_size = 24
+        current_size = original_size
+        while current_size > 12:  # Don't go smaller than size 12
+            self.font = pygame.font.Font(None, current_size)
+            rendered = self.font.render(text, True, (0, 0, 0))
+            if rendered.get_width() <= max_width:
+                return [text]
+            current_size -= 1
+        
+        # If we get here, use the smallest size
+        self.font = pygame.font.Font(None, 12)
+        return [text]
+        
+    def update_appearance(self):
+        """Update the sprite's appearance based on state"""
+        self.image.fill((0, 0, 0, 0))  # Clear with transparency
+        
+        # Draw the ingredient circle with size based on state
+        radius = 30
+        if self.is_clicked:
+            radius = 28  # Slightly smaller when clicked
+        elif self.is_hovered:
+            radius = 32  # Slightly larger when hovered
+            
+        pygame.draw.circle(self.image, self.color,
+                         (110, 45), radius)  # Centered horizontally at 110 (half of 220)
+        
+        # Get wrapped or scaled text that fits within 200px (leaving 10px padding on each side)
+        max_width = 200  # Increased from 180 to 200
+        lines = self.get_wrapped_text(self.name, max_width)
+        
+        if len(lines) == 1:
+            # Single line (either short text or scaled)
+            text = self.font.render(lines[0], True, (0, 0, 0))
+            text_rect = text.get_rect(centerx=110, centery=95)  # Adjusted y position and centerx
+            self.image.blit(text, text_rect)
+        else:
+            # Two lines of text
+            text1 = self.font.render(lines[0], True, (0, 0, 0))
+            text2 = self.font.render(lines[1], True, (0, 0, 0))
+            
+            text1_rect = text1.get_rect(centerx=110, centery=90)  # Adjusted y positions and centerx
+            text2_rect = text2.get_rect(centerx=110, centery=105)
+            
+            self.image.blit(text1, text1_rect)
+            self.image.blit(text2, text2_rect)
+        
+        # Draw count in top-right corner with better padding
+        count_text = self.font.render(str(self.count), True, (0, 0, 0))
+        count_rect = count_text.get_rect(topright=(210, 5))  # Adjusted for new width
+        self.image.blit(count_text, count_rect)
+        
+        # Reset font to default size for next render
+        self.font = pygame.font.Font(None, 24)
     
     def update(self):
+        """Update sprite state"""
         # Update hover state
         mouse_pos = pygame.mouse.get_pos()
         was_hovered = self.is_hovered
-        self.is_hovered = self.rect.collidepoint(mouse_pos)
         
-        # Update 3D position
-        if self.is_moving:
-            # Move towards target
-            for i in range(3):
-                diff = self.target_pos_3d[i] - self.pos_3d[i]
-                if abs(diff) > self.speed:
-                    self.pos_3d[i] += self.speed * (1 if diff > 0 else -1)
-                else:
-                    self.pos_3d[i] = self.target_pos_3d[i]
+        # Calculate distance from mouse to center of ingredient circle
+        center_x = self.rect.centerx
+        center_y = self.rect.centery - 15  # Adjust for the actual circle position
+        dx = mouse_pos[0] - center_x
+        dy = mouse_pos[1] - center_y
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # Only hover if mouse is within the ingredient circle (radius + small margin)
+        self.is_hovered = distance <= 35  # Using 35 as radius + margin
+        
+        # Update appearance if state changed
+        if was_hovered != self.is_hovered or self.is_clicked:
+            self.update_appearance()
             
-            # Check if we've reached the target
-            if all(abs(self.pos_3d[i] - self.target_pos_3d[i]) < self.speed for i in range(3)):
-                self.is_moving = False
-        
-        # Update hover height
-        if self.is_hovered:
-            self.target_hover_height = 20
-        else:
-            self.target_hover_height = 0
-        
-        self.hover_height += (self.target_hover_height - self.hover_height) * self.hover_speed
-        
-        # Update scale
-        if self.is_clicked:
-            self.target_scale = 0.9
-        elif self.is_hovered:
-            self.target_scale = 1.1
-        else:
-            self.target_scale = 1.0
-        
-        self.scale += (self.target_scale - self.scale) * 0.2
-        
-        # Update rotation
-        if self.is_hovered:
-            self.target_angle += self.rotation_speed
-        else:
-            self.target_angle = 0
-        
-        angle_diff = (self.target_angle - self.angle + 180) % 360 - 180
-        self.angle += angle_diff * 0.1
-        
-        # Update current radius
-        if self.is_clicked:
-            target_radius = self.click_radius
-        elif self.is_hovered:
-            target_radius = self.hover_radius
-        else:
-            target_radius = self.normal_radius
-        
-        self.current_radius += (target_radius - self.current_radius) * 0.3
-        
-        # Update rect position based on 3D position
-        screen_x = WIDTH/2 + self.pos_3d[0]
-        screen_y = HEIGHT/2 + self.pos_3d[1] - self.pos_3d[2]
-        self.rect.center = (screen_x, screen_y)
-    
-    def move_to(self, x, y, z=0):
-        """Set target position for smooth movement"""
-        self.target_pos_3d = [x - WIDTH/2, y - HEIGHT/2, z]
-        self.is_moving = True
-    
     def handle_click(self):
         """Handle mouse click on the sprite"""
-        if self.count > 0:
+        if self.is_hovered and self.count > 0:  # Only handle click if hovered and has ingredients
             self.is_clicked = True
+            self.update_appearance()
             # Reset click state after a short delay
             pygame.time.set_timer(pygame.USEREVENT, 100)  # 100ms delay
             return True
@@ -153,7 +157,9 @@ class IngredientSprite(pygame.sprite.Sprite):
     def reset_click(self):
         """Reset click state"""
         self.is_clicked = False
-    
-    def update_count(self, count):
-        """Update the ingredient count"""
-        self.count = count
+        self.update_appearance()
+        
+    def update_count(self, new_count):
+        """Update the displayed count"""
+        self.count = new_count
+        self.update_appearance()

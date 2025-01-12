@@ -2,26 +2,30 @@ from config import DIFFICULTY_SETTINGS, base_ingredients, WIDTH, HEIGHT
 import random
 import pygame
 import math
-from game_logic import trigger_kitchen_disaster, generate_customer_order
+from game_logic import trigger_kitchen_disaster, generate_customer_order, handle_baking_process
 from animation import flash_screen_red
 from sprites import IngredientSprite
 
 class Game:
     def __init__(self, animation_manager):
-        self.bakecoin = 0  # Initialize to 0
+        # Initialize game state
+        self.state = "intro"  # Start in intro state
+        self.bakecoin = 75  # Start with 75 bakecoin
         self.difficulty = "Normal"
         self.disaster_count = 0
         self.has_baked = False
         self.current_ingredients = []
         self.discovered_recipes = set(["Cake", "Cookies", "Brownies", "Pancakes", "Muffins"])
+        
         # Initialize all ingredients with exactly 5
         self.ingredient_counts = {ing: 5 for ing in base_ingredients}
         self.active_upgrades = set()
-        self.state = "intro"
-        self.achievements = {}  # Add this line
+        self.achievements = {}
         self.baking = False
         self.kitchen_disaster = None
         self.customer_order = None
+        
+        # Initialize recipes
         self.recipes = {
             "Cake": ["Flour", "Sugar", "Eggs", "Milk", "Butter"],
             "Cookies": ["Flour", "Sugar", "Eggs", "Butter"],
@@ -33,20 +37,7 @@ class Game:
             "Condensed Milk Fudge": ["Condensed Milk", "Chocolate Chips"]
         }
         
-        # Initialize ModernUI
-        from ui import ModernUI
-        self.ui = ModernUI()
-        
-        # ... other game state variables ...
-        self.upgrades = {
-            "Better Oven": {"cost": 50, "effect": "Reduces Oven malfunction chance", "icon": "🔥"},
-            "Sturdy Shelves": {"cost": 75, "effect": "Reduces Ingredient spill chance", "icon": "🥣"},
-            "Backup Generator": {"cost": 100, "effect": "Reduces Power outage chance", "icon": "🔌"},
-            "Quality Ingredients": {"cost": 125, "effect": "Improves baking success rate", "icon": "⭐"}
-        }
-        self.animation_manager = animation_manager
-
-        # Add the combinations dictionary but don't show ingredients until discovered
+        # Initialize combinations
         self.combinations = {
             ("Cocoa", "Sugar"): "Chocolate Chips",
             ("Milk", "Sugar"): "Condensed Milk",
@@ -56,281 +47,140 @@ class Game:
         
         # Start with only base ingredients discovered
         self.discovered_ingredients = set(base_ingredients)
-
-        # Add sprite groups
+        
+        # Initialize upgrades with costs and effects
+        self.upgrades = {
+            "Better Oven": {"cost": 50, "effect": "Reduces Oven malfunction chance", "icon": "🔥"},
+            "Sturdy Shelves": {"cost": 75, "effect": "Reduces Ingredient spill chance", "icon": "🥣"},
+            "Backup Generator": {"cost": 100, "effect": "Reduces Power outage chance", "icon": "🔌"},
+            "Quality Ingredients": {"cost": 125, "effect": "Improves baking success rate", "icon": "⭐"}
+        }
+        
+        # Store animation manager
+        self.animation_manager = animation_manager
+        
+        # Initialize sprite groups
         self.all_sprites = pygame.sprite.Group()
         self.ingredient_sprites = pygame.sprite.Group()
-        self.initialize_sprites()
-
-    def apply_difficulty(self):
-        return DIFFICULTY_SETTINGS[self.difficulty]
-
-    def start_baking(self):
-        if len(self.current_ingredients) > 0 and not self.baking:
-            print("Start baking called...")  # Debug print
-            self.baking = True
-            # This will be handled in the main game loop
-
-    def handle_ingredient_click(self, x, y):
-        """Handle clicking on ingredients"""
-        # Only block if we have too many active animations
-        if len(self.animation_manager.animated_ingredients) >= 5:
-            print("Too many active animations, wait for some to complete")
-            self.animation_manager.add_popup_message("Wait for ingredients to settle!", color=(255, 165, 0))
-            return None, None, None
-
-        # Convert click position to pygame.Rect for collision detection
-        click_rect = pygame.Rect(x-1, y-1, 2, 2)
         
-        # Check collision with ingredient sprites
-        for sprite in self.ingredient_sprites:
-            if sprite.rect.colliderect(click_rect):
-                ing = sprite.name
-                if self.ingredient_counts[ing] > 0:
-                    print(f"Selected ingredient: {ing}")  # Debug print
-                    self.current_ingredients.append(ing)
-                    self.ingredient_counts[ing] -= 1
-                    sprite.update_count(self.ingredient_counts[ing])
-                    
-                    # Return the sprite's center position for animation
-                    return ing, sprite.rect.centerx, sprite.rect.centery
-                else:
-                    print(f"Out of {ing}")  # Debug print
-                    self.animation_manager.add_popup_message(f"Out of {ing}!", color=(255, 0, 0))
-                    return None, None, None
-
-        print("No ingredient clicked")  # Debug print
-        return None, None, None
-
-    def check_for_combinations(self):
-        # Only check for combinations if there are exactly 2 ingredients
-        if len(self.current_ingredients) == 2:
-            ing1, ing2 = self.current_ingredients[0], self.current_ingredients[1]
-            combination = tuple(sorted([ing1, ing2]))
-            new_ingredient = self.combinations.get(combination)
+        # Initialize UI after sprite groups
+        from ui import ModernUI
+        self.ui = ModernUI()
+        
+        # Initialize sprites
+        self.initialize_sprites()
+        
+    def initialize_sprites(self):
+        """Initialize ingredient sprites with proper positioning"""
+        # Clear existing sprites
+        self.all_sprites.empty()
+        self.ingredient_sprites.empty()
+        
+        # Calculate grid layout
+        margin_left = 30
+        margin_top = 80
+        sprite_width = 220
+        sprite_height = 120
+        spacing_y = 110
+        items_per_row = 2
+        
+        # Create sprites for each ingredient
+        for i, ingredient in enumerate(sorted(self.ingredient_counts.keys())):
+            row = i // items_per_row
+            col = i % items_per_row
             
-            if new_ingredient and new_ingredient not in self.discovered_ingredients:
-                self.discovered_ingredients.add(new_ingredient)
-                self.ingredient_counts[new_ingredient] = 5
-                print(f"New ingredient discovered: {new_ingredient}")  # Debug print
-                return f"New ingredient discovered: {new_ingredient}!"
-        return None
-
+            x = margin_left + col * (sprite_width - 60)  # Reduced spacing between columns by subtracting 60
+            y = margin_top + row * spacing_y
+            
+            sprite = IngredientSprite(ingredient, x, y, self.ingredient_counts[ingredient])
+            self.ingredient_sprites.add(sprite)
+            self.all_sprites.add(sprite)
+    
     def update(self):
-        # Remove the baking process from here since it's handled in handle_keydown
+        """Update game state"""
+        if self.state != "main_game":
+            return
+            
+        # Update all sprites
+        self.all_sprites.update()
         
         # Check for kitchen disasters
         if not self.kitchen_disaster:
-            if random.random() < self.apply_difficulty()["disaster_chance"]:
-                self.kitchen_disaster = trigger_kitchen_disaster()
-        
-        # Generate customer orders
-        if not self.customer_order:
-            if random.random() < self.apply_difficulty()["customer_order_chance"]:
-                self.customer_order = generate_customer_order()
-
-        # Update all sprites
-        self.all_sprites.update()
-
-    def handle_baking_process(self):
-        """Process baking attempt and return result message and reward/penalty"""
-        # Don't process baking if animation is in progress
-        if self.animation_manager.is_animating:
-            return None, 0  # Return early if animating
-        
-        if not self.current_ingredients:
-            return None, 0
-
-        # Debug print current ingredients
-        print(f"Current ingredients: {sorted(self.current_ingredients)}")
-
-        # Check if the current ingredients match any recipe
-        for recipe, required_ingredients in self.recipes.items():
-            # Sort both lists to ensure consistent comparison
-            current_sorted = sorted(self.current_ingredients)
-            recipe_sorted = sorted(required_ingredients)
-            
-            # Debug print recipe comparison
-            print(f"Comparing with {recipe}: {recipe_sorted}")
-            
-            # Check if all required ingredients are present
-            if set(current_sorted) == set(recipe_sorted):
-                base_reward = 10
-                if "Quality Ingredients" in self.active_upgrades:
-                    base_reward += 5  # Extra reward for quality ingredients
-                result = f"Successfully baked {recipe}!"
-                self.current_ingredients.clear()  # Clear current ingredients after baking
-                self.animation_manager.reset_bowl()  # Reset the bowl visualization
-                self.has_baked = True
-                print(f"Recipe matched! {recipe}")  # Debug print
-                self.bakecoin += base_reward  # Add the reward to bakecoin
-                return result, base_reward
-
-        # If no recipe matches, it's a failed attempt
-        print("No recipe matched with current ingredients")  # Debug print
-        penalty = 5
-        result = f"Baking failed! Lost {penalty} Bakecoin"  # Added penalty amount to message
-        self.current_ingredients.clear()  # Clear current ingredients after baking
-        self.animation_manager.reset_bowl()  # Reset the bowl visualization
-        self.bakecoin -= penalty  # Subtract the penalty from bakecoin
-        return result, -penalty
-
-    def load_from_save(self, save_data):
-        self.bakecoin = save_data["bakecoin"]
-        self.discovered_recipes = set(save_data["discovered_recipes"])
-        self.achievements = save_data["achievements"]
-        self.difficulty = save_data["difficulty"]
-        self.disaster_count = save_data["disaster_count"]
-        self.has_baked = save_data["has_baked"]
-
-    # ... other methods to manage game state ...
-
-    def choose_difficulty(self, key):
-        """Set game difficulty based on key press"""
-        if key == pygame.K_e:
-            self.difficulty = "Easy"
-            self.bakecoin = 100
-        elif key == pygame.K_n:
-            self.difficulty = "Normal"
-            self.bakecoin = 75
-        elif key == pygame.K_h:
-            self.difficulty = "Hard"
-            self.bakecoin = 50
-        
-        self.state = "main_game"  # Explicitly set state to main_game
-        print(f"Difficulty set to: {self.difficulty}, Bakecoin: {self.bakecoin}, State changed to: {self.state}")
-        return True
-
-    def trigger_kitchen_disaster(self):
-        base_chance = self.apply_difficulty()["disaster_chance"]
-        disaster_types = ["Oven malfunction", "Ingredient spill", "Power outage"]
-        
-        for disaster in disaster_types:
-            if disaster == "Oven malfunction" and "Better Oven" in self.active_upgrades:
-                base_chance *= 0.5
-            elif disaster == "Ingredient spill" and "Sturdy Shelves" in self.active_upgrades:
-                base_chance *= 0.5
-            elif disaster == "Power outage" and "Backup Generator" in self.active_upgrades:
-                base_chance *= 0.5
-            
-            if random.random() < base_chance:
-                self.kitchen_disaster = disaster
-                self.disaster_count += 1
-                self.animation_manager.trigger_disaster_animation(disaster, self)
-                return self.kitchen_disaster
-        
-        return None
-
-    def handle_disaster_animation(self, animation_manager):
-        ingredients_affected = False
-        if self.kitchen_disaster == "Ingredient spill":
-            if self.current_ingredients:
-                removed_ingredient = random.choice(self.current_ingredients)
-                self.current_ingredients.remove(removed_ingredient)
-                # Set bowl fill level proportional to remaining ingredients
-                animation_manager.bowl_fill_level = len(self.current_ingredients) * 0.1
-                self.ingredient_counts[removed_ingredient] = max(0, self.ingredient_counts[removed_ingredient] - 1)
-                ingredients_affected = True
-
-        elif self.kitchen_disaster == "Power outage":
-            if random.random() < 0.3:  # 30% chance
-                for ing in self.current_ingredients:
-                    self.ingredient_counts[ing] = max(0, self.ingredient_counts[ing] - 1)
-                self.current_ingredients.clear()
-                # Reset bowl fill level when all ingredients are lost
-                animation_manager.bowl_fill_level = 0
-                ingredients_affected = True
-
-        elif self.kitchen_disaster == "Oven malfunction":
-            if self.current_ingredients:
-                remove_count = len(self.current_ingredients) // 2
-                for _ in range(remove_count):
-                    ing = self.current_ingredients.pop(random.randint(0, len(self.current_ingredients) - 1))
-                    self.ingredient_counts[ing] = max(0, self.ingredient_counts[ing] - 1)
-                # Set bowl fill level proportional to remaining ingredients
-                animation_manager.bowl_fill_level = len(self.current_ingredients) * 0.1
-                ingredients_affected = True
-
-        self.disaster_count += 1
-        return ingredients_affected
-
-    def combine_ingredients(self, ing1, ing2):
-        # Try both orderings of the ingredients
-        combination = tuple(sorted([ing1, ing2]))
-        new_ingredient = self.combinations.get(combination)
-        
-        if new_ingredient:
-            if new_ingredient not in self.ingredient_counts:
-                self.ingredient_counts[new_ingredient] = 5  # Initialize with 5 when discovered
-            else:
-                self.ingredient_counts[new_ingredient] += 1
-            self.discovered_ingredients.add(new_ingredient)
-            return new_ingredient
-        return None
-
-    def replenish_ingredients(self):
-        cost = 25  # Cost for replenishing ingredients
-        if self.bakecoin >= cost:
-            self.bakecoin -= cost
-            # Reset all discovered ingredients to current amount + 5
-            for ing in self.discovered_ingredients:
-                self.ingredient_counts[ing] = self.ingredient_counts.get(ing, 0) + 5
-            print(f"Ingredients replenished. Cost: {cost} Bakecoin")
-            return True
-        else:
-            print("Not enough Bakecoin to replenish ingredients!")
-            return False
-
-    def reset_bowl(self):
-        self.current_ingredients.clear()
-        self.animation_manager.reset_bowl()
-
-    def initialize_sprites(self):
-        # Create sprites in two columns on the left side
-        sprite_width = 100  # Width of each sprite
-        sprite_height = 100  # Height of each sprite
-        margin_left = 50  # Left margin from screen edge
-        margin_top = 150  # Top margin to avoid bakecoin display
-        spacing_y = 20  # Vertical spacing between sprites
-        
-        items_per_column = (len(self.ingredient_counts) + 1) // 2  # Distribute items evenly
-        
-        for i, (ing, count) in enumerate(self.ingredient_counts.items()):
-            column = i // items_per_column  # 0 for first column, 1 for second
-            row = i % items_per_column
-            
-            x = margin_left + column * (sprite_width + 50)  # 50px spacing between columns
-            y = margin_top + row * (sprite_height + spacing_y)
-            
-            sprite = IngredientSprite(ing, x, y, count)
-            self.all_sprites.add(sprite)
-            self.ingredient_sprites.add(sprite)
-
-    def purchase_upgrade(self, mouse_pos):
-        """Purchase an upgrade if the player has enough bakecoins"""
-        if self.state != "main_game":
-            return False
-            
-        upgrade_width = WIDTH // len(self.upgrades)
-        x = mouse_pos[0]
-        y = mouse_pos[1]
-        
-        # Check if click is in upgrade area
-        if y >= HEIGHT - 50:
-            upgrade_index = x // upgrade_width
-            if upgrade_index < len(self.upgrades):
-                upgrade_name = list(self.upgrades.keys())[upgrade_index]
+            settings = DIFFICULTY_SETTINGS[self.difficulty]
+            if random.random() < settings["disaster_chance"]:
+                self.kitchen_disaster = trigger_kitchen_disaster(self)
                 
-                # Don't allow purchasing already active upgrades
-                if upgrade_name in self.active_upgrades:
-                    return False
-                    
-                upgrade_cost = self.upgrades[upgrade_name]["cost"]
-                if self.bakecoin >= upgrade_cost:
-                    self.bakecoin -= upgrade_cost
-                    self.active_upgrades.add(upgrade_name)
-                    print(f"Purchased upgrade: {upgrade_name}")
+        # Check for customer orders
+        if not self.customer_order:
+            settings = DIFFICULTY_SETTINGS[self.difficulty]
+            if random.random() < settings["customer_order_chance"]:
+                self.customer_order = generate_customer_order(self)
+                
+        # Clear disasters with a 10% chance each update
+        if self.kitchen_disaster and random.random() < 0.1:
+            self.kitchen_disaster = None
+            
+    def handle_ingredient_click(self, x, y):
+        """Handle ingredient click and return animation info"""
+        for sprite in self.ingredient_sprites:
+            if sprite.rect.collidepoint(x, y) and sprite.count > 0:
+                # Add ingredient to current ingredients
+                self.current_ingredients.append(sprite.name)
+                # Decrease count
+                sprite.count -= 1
+                sprite.update_count(sprite.count)
+                # Return animation info
+                return sprite.name, sprite.rect.centerx, sprite.rect.centery
+        return None, None, None
+        
+    def replenish_ingredients(self):
+        """Replenish all ingredients for 25 bakecoin"""
+        if self.bakecoin >= 25:
+            self.bakecoin -= 25
+            for ingredient in self.ingredient_counts:
+                self.ingredient_counts[ingredient] = 5
+                # Update sprite counts
+                for sprite in self.ingredient_sprites:
+                    if sprite.name == ingredient:
+                        sprite.update_count(5)
+            return True
+        return False
+        
+    def purchase_upgrade(self, mouse_pos):
+        """Purchase an upgrade if clicked and can afford"""
+        # Calculate button dimensions exactly as in UI
+        upgrade_height = 50
+        spacing = 10
+        total_width = WIDTH - 40  # Match UI's total width
+        button_width = (total_width - (spacing * (len(self.upgrades) - 1))) // len(self.upgrades)
+        
+        y = HEIGHT - upgrade_height - spacing
+        
+        # Calculate total buttons width and center position exactly as in UI
+        total_buttons_width = (button_width * len(self.upgrades)) + (spacing * (len(self.upgrades) - 1))
+        start_x = (WIDTH - total_buttons_width) // 2  # Center the buttons horizontally
+        
+        # Debug print for mouse position
+        print(f"Mouse click at: {mouse_pos}")
+        
+        for i, (name, upgrade) in enumerate(self.upgrades.items()):
+            x = start_x + i * (button_width + spacing)
+            button_rect = pygame.Rect(x, y, button_width, upgrade_height)
+            
+            # Debug print for each button's area
+            print(f"Button '{name}' rect: {button_rect}, Cost: {upgrade['cost']}, Active: {name in self.active_upgrades}")
+            
+            if button_rect.collidepoint(mouse_pos):
+                print(f"Clicked on {name} upgrade")
+                if name not in self.active_upgrades and self.bakecoin >= upgrade['cost']:
+                    print(f"Purchasing {name} for {upgrade['cost']} bakecoin")
+                    self.bakecoin -= upgrade['cost']
+                    self.active_upgrades.add(name)
                     return True
                 else:
-                    print(f"Not enough Bakecoin for {upgrade_name}")
+                    print(f"Cannot purchase: Active={name in self.active_upgrades}, Bakecoin={self.bakecoin}")
         return False
+        
+    def handle_baking_process(self):
+        """Process baking attempt and return result message and reward/penalty"""
+        return handle_baking_process(self)
